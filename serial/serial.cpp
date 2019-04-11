@@ -1,9 +1,10 @@
+#pragma once
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "environment.c"
-#include "genome.c"
-
+#include "environment.hpp"
+// #include "genome.h"
+// #include "neuralnet.h"
 const int POPULATION_SIZE = 128;
 
 genome *organism;
@@ -67,6 +68,8 @@ void mutate(float mutation_rate) {
 }
 
 int main() {
+	int ceiling_score = 100000;
+	Game gg(ceiling_score);
 	srand(time(NULL));
 
 	printf("Genome length: %d\n", GENOME_LENGTH);
@@ -88,14 +91,30 @@ int main() {
 	fprintf(fout, "GENOME_LENGTH = %d\n", GENOME_LENGTH);
 
 	for(int i = 0; i < NUM_GENERATIONS; i++) {
-		for(int j = 0; j < POPULATION_SIZE; j++) {
-			for(int k = 0; k < GENOME_LENGTH; k++) {
-				fprintf(fout, "%f ", organism[j].genes[k]);
+		free(score);
+		score = gg.start(organism, POPULATION_SIZE);
+		// for(int j = 0; j < POPULATION_SIZE; j++) {
+			// for(int k = 0; k < GENOME_LENGTH; k++) {
+			// 	fprintf(fout, "%f ", organism[j].genes[k]);
+			// }
+			// fprintf(fout, "\n");
+			// score[j] = evaluate(organism[j].genes);
+			// max_score = max_score > score[j] ? max_score : score[j];
+		// }
+		int max_score = 0;
+		int idx = -1;
+		for(int j=0; j < POPULATION_SIZE; j++) {
+			if(score[j] >= max_score) {
+				idx = j;
+				max_score = score[j];
 			}
-			fprintf(fout, "\n");
-			score[j] = evaluate(organism[j].genes);
-			max_score = max_score > score[j] ? max_score : score[j];
 		}
+		fprintf(fout,"Best of Gen %d :\n",i);
+		for(int k = 0; k < GENOME_LENGTH; k++) {
+			fprintf(fout, "%f ", organism[idx].genes[k]);
+		}
+		fprintf(fout, "\n");
+		printf("Score after generation %d is %d\n", i, max_score);
 		int selected = selection(0.15);
 		crossover(selected);
 		mutate(1e-3);

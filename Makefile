@@ -1,5 +1,5 @@
-flappy-serial: serial/serial.c serial/genome.c serial/environment.c serial/neuralnet.c
-	gcc -o flappy-serial serial/serial.c -lm
+flappy-serial: serial/serial.cpp serial/genome.h serial/environment.hpp serial/neuralnet.h
+	g++ -o flappy-serial serial/serial.cpp -lm
 
 clean: flappy-serial
 	@rm flappy-serial
