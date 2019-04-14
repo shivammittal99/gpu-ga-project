@@ -3,10 +3,10 @@
 
 using namespace std;
 
-int POPULATION_SIZE = 1024;
-int NUM_GENERATIONS = 100;
+int POPULATION_SIZE = 4096;
+int NUM_GENERATIONS = 200;
 
-int n = 9, m = 64, o = 3;
+int n = 8, m1 = 64, m2 = 8, o = 3;
 
 int GENOME_LENGTH;
 
@@ -47,57 +47,57 @@ float * sigmoid(float input[], int n) {
 }
 
 /* Architecture of neural network
- * input: n * n => field of view of snake
- * hidden layer: m
+ * input: n => distance of closest object in directions
+ * hidden layer: m1, m2
  * output: o => direction to move in: straight, left or right
  */
-int forward(int *input, float gene[], int n, int m, int o, int score) {
-	random_device rd;
-	uniform_real_distribution<float> frand(0, 1);
-	uniform_int_distribution<int> frand2(0, 2);
+int forward(float *input, float gene[]) {
+	float *W1 = &gene[0];
+	float *b1 = &gene[n * m1];
+	float *W2 = &gene[n * m1 + m1];
+	float *b2 = &gene[n * m1 + m1 + m1 * m2];
+	float *W3 = &gene[n * m1 + m1 + m1 * m2 + m2];
+	float *b3 = &gene[n * m1 + m1 + m1 * m2 + m2 + m2 * o];
 
-	if(frand(rd) < gene[0] / (10.0 * score + 1.0)) {
-		return frand2(rd);
-	}
-
-	float *one_hot = (float *) malloc(sizeof(float) * n * n * 4);
-
-	memset(one_hot, 0, sizeof(one_hot));
-
-	for(int i = 0; i < n * n; i++) {
-		one_hot[i * 4 + input[i]] = 1;
-	}
-
-	float *W1 = &gene[1];
-	float *b1 = &gene[1 + n * n * 4 * m];
-	float *W2 = &gene[1 + n * n * 4 * m + m];
-	float *b2 = &gene[1 + n * n * 4 * m + m + m * o];
-
-	float *dense1 = dense(one_hot, W1, b1, n * n * 4, m);
-	float *sigm1 = sigmoid(dense1, m);
+	float *dense1 = dense((float *) input, W1, b1, n, m1);
+	float *sigm1 = sigmoid(dense1, m1);
 	free(dense1);
-	float *dense2 = dense(sigm1, W2, b2, m, o);
+	float *dense2 = dense(sigm1, W2, b2, m1, m2);
 	free(sigm1);
-	float *sigm2 = sigmoid(dense2, o);
+	float *sigm2 = sigmoid(dense2, m2);
 	free(dense2);
+	float *dense3 = dense(sigm2, W3, b3, m2, o);
+	free(sigm2);
+	float *sigm3 = sigmoid(dense3, o);
 
-	float maxm = sigm2[0];
+	float maxm = sigm3[0];
 	int res = 0;
 
 	for(int i = 1; i < o; i++) {
-		if(sigm2[i] > maxm) {
-			maxm = sigm2[i];
+		if(sigm3[i] > maxm) {
+			maxm = sigm3[i];
 			res = i;
 		}
 	}
 	
-	free(sigm2);
+	free(sigm3);
 
 	return res;
 }
 
 typedef pair<int, int> ii;
-
+bool check(int u, int v, int i, int j) {
+	if(u == 0 && v !=0) {
+		if(i==u && j == v / abs(v)) return true;
+	}
+	else if(u!=0 && v == 0) {
+		if(i == u/abs(u) && j == v) return true;
+	}
+	else if(u!=0 && v!=0) {
+		if(i==u/abs(u) && j==v/abs(v)) return true;
+	}
+	return false;
+}
 int* evaluate(float *genes, int num_organisms, bool visualize) {
 	int *scores = (int *) malloc(sizeof(int) * num_organisms);
 
@@ -118,6 +118,8 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 		int snake_init_length = 5;
 		int init_x = rand()%(M-snake_init_length-2);
 		int init_y = rand()%(M-snake_init_length-2);
+		init_x = 0;
+		init_y = 0;
 		for(int i = 0; i<snake_init_length; i++) {
 			snake.push(ii(i+init_x,0+init_y));
 		}
@@ -146,27 +148,58 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			int y = head.second;
 			// cout << "0" << endl;
 			// create the input for Neural Network        
-			int in[input_dim][input_dim];
-			for(int i = x-t, i1 = 0; i <= x+t; i++, i1++) {
-				for(int j=y-t, j1=0; j <= y+t; j++, j1++) {
-					in[i1][j1] = 0;
-					if(i < 0 || j < 0 || i >= M || j >= N) {
-						in[i1][j1] = 1;
-					}
-					else if(i == food_pos.first && j == food_pos.second) {
-						in[i1][j1] = 3;
-					}
-				}
-			}
-			// cout << "1" << endl;
+			// int in[input_dim][input_dim];
+			// for(int i = x-t, i1 = 0; i <= x+t; i++, i1++) {
+			// 	for(int j=y-t, j1=0; j <= y+t; j++, j1++) {
+			// 		in[i1][j1] = 0;
+			// 		if(i < 0 || j < 0 || i >= M || j >= N) {
+			// 			in[i1][j1] = 1;
+			// 		}
+			// 		else if(i == food_pos.first && j == food_pos.second) {
+			// 			in[i1][j1] = 3;
+			// 		}
+			// 	}
+			// }
+			// // cout << "1" << endl;
 			int snake_size = snake.size();
-			for(int i=0; i < snake_size; i++) {
-				ii haha = snake.front();
-				snake.pop();
-				if(haha.first>=x-t && haha.first <= x+t && haha.second>=y-t && haha.second<=y+t) {
-					in[haha.first-(x-t)][haha.second-(y-t)] = 2;
+			// for(int i=0; i < snake_size; i++) {
+			// 	ii haha = snake.front();
+			// 	snake.pop();
+			// 	if(haha.first>=x-t && haha.first <= x+t && haha.second>=y-t && haha.second<=y+t) {
+			// 		in[haha.first-(x-t)][haha.second-(y-t)] = 2;
+			// 	}
+			// 	snake.push(haha);
+			// }
+			ii pos[8];
+			float dist[8];
+			for(int i=0;i < 8;i++) dist[i] = 100000;
+			int k = 0;
+			for(int i=-1;i<=1;i++) {
+				for(int j=-1; j<=1;j++) {
+					if (i==0&&j==0) continue;
+					dist[k] = min(abs(i)*((i+1)/2)*N-i*abs(x),abs(j)*((j+1)/2)*N-j*abs(y));
+					int u,v;
+					// food_pos
+					u = food_pos.first - x;
+					v = food_pos.second - y;
+					if(check(u,v,i,j)) {
+						dist[k] = max(dist[k], float(abs(u)+abs(v)));
+					}
+					for(int ti=0; ti < snake_size; ti++) {
+						ii haha = snake.front();
+						snake.pop();
+						u = haha.first - x;
+						v = haha.second - y;
+						if(check(u,v,i,j)) {
+							dist[k] = max(dist[k], float(abs(u)+abs(v))/(abs(i)+abs(j)));
+						}
+						// if(haha.first>=x-t && haha.first <= x+t && haha.second>=y-t && haha.second<=y+t) {
+						// 	in[haha.first-(x-t)][haha.second-(y-t)] = 2;
+						// }
+						snake.push(haha);
+					}
+					k++;						
 				}
-				snake.push(haha);
 			}
 			// cout << "Created input for neural network" << endl;
 			// Take the input here
@@ -183,7 +216,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			// 2 south:0,1
 			// 3 east: 1,0
 			// 4 west:-1,0
-			int com = forward(&in[0][0], genes + ind * GENOME_LENGTH, n, m, o, score);
+			int com = forward(dist, genes + ind * GENOME_LENGTH);
 			
 			// cout << "ind = " << ind << " | com = " << com << endl;
 			
@@ -311,8 +344,8 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 
 int *fitness_score = NULL, max_score;
 
-void createGenomes(int field_of_view, int hidden_layer_size, int num_outputs) {
-	GENOME_LENGTH = 1 + field_of_view * hidden_layer_size + hidden_layer_size + hidden_layer_size * num_outputs + num_outputs;
+void createGenomes() {
+	GENOME_LENGTH = n * m1 + m1 + m1 * m2 + m2 + m2 * o + o;
 	
 	organism = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
 
@@ -320,8 +353,7 @@ void createGenomes(int field_of_view, int hidden_layer_size, int num_outputs) {
 	uniform_real_distribution<float> frand(-1, 1);
 
 	for(int i = 0; i < POPULATION_SIZE; i++) {
-		organism[i * GENOME_LENGTH] = abs(frand(rd));
-		for(int j = 1; j < GENOME_LENGTH; j++) {
+		for(int j = 0; j < GENOME_LENGTH; j++) {
 			organism[i * GENOME_LENGTH + j] = frand(rd);
 		}
 	}
@@ -340,7 +372,7 @@ int selection(float selection_cutoff) {
 		}
 	}
 
-	while(selected < 2 * int(sqrt(POPULATION_SIZE))) {
+	while(selected < 16) {
 		int temp = rand()%POPULATION_SIZE;
 		copy(organism + temp * GENOME_LENGTH, organism + (temp + 1) * GENOME_LENGTH, new_generation + selected * GENOME_LENGTH);
 		selected++;
@@ -374,10 +406,7 @@ void mutate(float mutation_rate) {
 	uniform_real_distribution<float> frand2(-1, 1);
 	
 	for(int i = 0; i < POPULATION_SIZE; i++) {
-		if(frand1(rd) < mutation_rate) {
-			organism[i * GENOME_LENGTH] *= (1 + 0.02 * (frand2(rd)));
-		}
-		for(int j = 1; j < GENOME_LENGTH; j++) {
+		for(int j = 0; j < GENOME_LENGTH; j++) {
 			if(frand1(rd) < mutation_rate) {
 				organism[i * GENOME_LENGTH + j] *= (1 + 0.02 * frand2(rd));
 			}
@@ -391,7 +420,7 @@ int main() {
 	int gd = DETECT, gm; 
     initgraph(&gd, &gm, NULL);
 
-	createGenomes(n * n * 4, m, o);
+	createGenomes();
 
 	printf("Genome length: %d\n", GENOME_LENGTH);
 	printf("Generation size: %d\n", POPULATION_SIZE);
