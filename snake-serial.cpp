@@ -3,7 +3,7 @@
 
 using namespace std;
 
-int POPULATION_SIZE = 64;
+int POPULATION_SIZE = 1024;
 int NUM_GENERATIONS = 100;
 
 int n = 9, m = 64, o = 3;
@@ -51,7 +51,15 @@ float * sigmoid(float input[], int n) {
  * hidden layer: m
  * output: o => direction to move in: straight, left or right
  */
-int forward(int *input, float gene[], int n, int m, int o) {
+int forward(int *input, float gene[], int n, int m, int o, int score) {
+	random_device rd;
+	uniform_real_distribution<float> frand(0, 1);
+	uniform_int_distribution<int> frand2(0, 2);
+
+	if(frand(rd) < gene[0] / (10.0 * score + 1.0)) {
+		return frand2(rd);
+	}
+
 	float *one_hot = (float *) malloc(sizeof(float) * n * n * 4);
 
 	memset(one_hot, 0, sizeof(one_hot));
@@ -60,10 +68,10 @@ int forward(int *input, float gene[], int n, int m, int o) {
 		one_hot[i * 4 + input[i]] = 1;
 	}
 
-	float *W1 = &gene[0];
-	float *b1 = &gene[n * n * 4 * m];
-	float *W2 = &gene[n * n * 4 * m + m];
-	float *b2 = &gene[n * n * 4 * m + m + m * o];
+	float *W1 = &gene[1];
+	float *b1 = &gene[1 + n * n * 4 * m];
+	float *W2 = &gene[1 + n * n * 4 * m + m];
+	float *b2 = &gene[1 + n * n * 4 * m + m + m * o];
 
 	float *dense1 = dense(one_hot, W1, b1, n * n * 4, m);
 	float *sigm1 = sigmoid(dense1, m);
@@ -108,10 +116,13 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 		ii food_pos;
 		queue<pair<int,int>> snake;
 		int snake_init_length = 5;
+		int init_x = rand()%(M-snake_init_length-2);
+		int init_y = rand()%(M-snake_init_length-2);
 		for(int i = 0; i<snake_init_length; i++) {
-			snake.push(ii(i,0));
+			snake.push(ii(i+init_x,0+init_y));
 		}
 		int maxiters = 50;
+		int loops = maxiters;
 		// 1 north:0,-1
 		// 2 south:0,1
 		// 3 east: 1,0
@@ -172,7 +183,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			// 2 south:0,1
 			// 3 east: 1,0
 			// 4 west:-1,0
-			int com = forward(&in[0][0], genes + ind * GENOME_LENGTH, n, m, o);
+			int com = forward(&in[0][0], genes + ind * GENOME_LENGTH, n, m, o, score);
 			
 			// cout << "ind = " << ind << " | com = " << com << endl;
 			
@@ -226,6 +237,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			// cout << "Done with motion direction" << endl;
 			// check if the snake eats the food in the next move
 			head = ii(head.first+dir.first, head.second+dir.second); 
+			snake.push(head);
 
 			// move the snake in the direction
 			if(head != food_pos) {
@@ -233,10 +245,11 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 
 			}
 			else {
-				score += maxiters;
+				score += 1;
+				loops = maxiters;
 				foodEaten = true;
 			}
-			snake.push(head);
+
 
 			// check if the snake crosses any boundaries
 			x = head.first;
@@ -253,7 +266,8 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			for(int i=0; i < snake_size; i++) {
 				ii haha = snake.front();
 				snake.pop();
-				if(haha != head && haha.first == x && haha.second == y) {
+				if(i < snake_size-1 && haha.first == x && haha.second == y) {
+					cout << "Snake bit itself" << endl;
 					// cout << i << " "<< x << " " << y << " " << haha.first << " " << haha.second << endl;
 					snakeIsAlive = false;
 					break;
@@ -287,7 +301,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 				delay(20);
 			}
 
-		}while(snakeIsAlive && maxiters--);
+		}while(snakeIsAlive && loops--);
 
 		scores[ind] = score;
 	}
@@ -298,7 +312,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 int *fitness_score = NULL, max_score;
 
 void createGenomes(int field_of_view, int hidden_layer_size, int num_outputs) {
-	GENOME_LENGTH = field_of_view * hidden_layer_size + hidden_layer_size + hidden_layer_size * num_outputs + num_outputs;
+	GENOME_LENGTH = 1 + field_of_view * hidden_layer_size + hidden_layer_size + hidden_layer_size * num_outputs + num_outputs;
 	
 	organism = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
 
@@ -306,7 +320,8 @@ void createGenomes(int field_of_view, int hidden_layer_size, int num_outputs) {
 	uniform_real_distribution<float> frand(-1, 1);
 
 	for(int i = 0; i < POPULATION_SIZE; i++) {
-		for(int j = 0; j < GENOME_LENGTH; j++) {
+		organism[i * GENOME_LENGTH] = abs(frand(rd));
+		for(int j = 1; j < GENOME_LENGTH; j++) {
 			organism[i * GENOME_LENGTH + j] = frand(rd);
 		}
 	}
@@ -325,7 +340,7 @@ int selection(float selection_cutoff) {
 		}
 	}
 
-	while(selected < 8) {
+	while(selected < 2 * int(sqrt(POPULATION_SIZE))) {
 		int temp = rand()%POPULATION_SIZE;
 		copy(organism + temp * GENOME_LENGTH, organism + (temp + 1) * GENOME_LENGTH, new_generation + selected * GENOME_LENGTH);
 		selected++;
@@ -359,9 +374,12 @@ void mutate(float mutation_rate) {
 	uniform_real_distribution<float> frand2(-1, 1);
 	
 	for(int i = 0; i < POPULATION_SIZE; i++) {
-		for(int j = 0; j < GENOME_LENGTH; j++) {
+		if(frand1(rd) < mutation_rate) {
+			organism[i * GENOME_LENGTH] *= (1 + 0.02 * (frand2(rd)));
+		}
+		for(int j = 1; j < GENOME_LENGTH; j++) {
 			if(frand1(rd) < mutation_rate) {
-				organism[i * GENOME_LENGTH + j] = frand2(rd);
+				organism[i * GENOME_LENGTH + j] *= (1 + 0.02 * frand2(rd));
 			}
 		}
 	}
