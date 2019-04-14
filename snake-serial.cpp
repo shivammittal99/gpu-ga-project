@@ -1,3 +1,4 @@
+#pragma once
 #include <graphics.h>
 #include <bits/stdc++.h>
 
@@ -6,7 +7,7 @@ using namespace std;
 int POPULATION_SIZE = 4096;
 int NUM_GENERATIONS = 200;
 
-int n = 8, m1 = 64, m2 = 8, o = 3;
+int n = 24, m1 = 16, o = 4;
 
 int GENOME_LENGTH;
 
@@ -48,44 +49,42 @@ float * sigmoid(float input[], int n) {
 
 /* Architecture of neural network
  * input: n => distance of closest object in directions
- * hidden layer: m1, m2
+ * hidden layer: m1
  * output: o => direction to move in: straight, left or right
  */
 int forward(float *input, float gene[]) {
 	float *W1 = &gene[0];
 	float *b1 = &gene[n * m1];
 	float *W2 = &gene[n * m1 + m1];
-	float *b2 = &gene[n * m1 + m1 + m1 * m2];
-	float *W3 = &gene[n * m1 + m1 + m1 * m2 + m2];
-	float *b3 = &gene[n * m1 + m1 + m1 * m2 + m2 + m2 * o];
+	float *b2 = &gene[n * m1 + m1 + m1 * o];
 
 	float *dense1 = dense((float *) input, W1, b1, n, m1);
 	float *sigm1 = sigmoid(dense1, m1);
 	free(dense1);
-	float *dense2 = dense(sigm1, W2, b2, m1, m2);
+	float *dense2 = dense(sigm1, W2, b2, m1, o);
 	free(sigm1);
-	float *sigm2 = sigmoid(dense2, m2);
+	float *sigm2 = sigmoid(dense2, o);
 	free(dense2);
-	float *dense3 = dense(sigm2, W3, b3, m2, o);
-	free(sigm2);
-	float *sigm3 = sigmoid(dense3, o);
 
-	float maxm = sigm3[0];
+	float maxm = sigm2[0];
 	int res = 0;
 
 	for(int i = 1; i < o; i++) {
-		if(sigm3[i] > maxm) {
-			maxm = sigm3[i];
+		if(sigm2[i] > maxm) {
+			maxm = sigm2[i];
 			res = i;
 		}
 	}
 	
-	free(sigm3);
+	free(sigm2);
 
 	return res;
 }
 
+int *fitness_score = NULL, max_score;
+
 typedef pair<int, int> ii;
+
 bool check(int u, int v, int i, int j) {
 	if(u == 0 && v !=0) {
 		if(i==u && j == v / abs(v)) return true;
@@ -98,16 +97,16 @@ bool check(int u, int v, int i, int j) {
 	}
 	return false;
 }
-int* evaluate(float *genes, int num_organisms, bool visualize) {
+const int M = 80;
+const int N = 80;
+int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize, int foods[][2], int num_foods) {
 	int *scores = (int *) malloc(sizeof(int) * num_organisms);
-
 	for(int ind = 0; ind < num_organisms; ind++) {
 		const int off_x = 10;
 		const int off_y = 10;
 		const int ss_x = 400;
 		const int ss_y = 400;
-		const int M = 20;
-		const int N = 20;
+
 		int ps_x = ss_x / M;
 		int ps_y = ss_y / N;
 
@@ -118,12 +117,13 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 		int snake_init_length = 5;
 		int init_x = rand()%(M-snake_init_length-2);
 		int init_y = rand()%(M-snake_init_length-2);
-		init_x = 0;
-		init_y = 0;
+		init_x = M/2;
+		init_y = N/2;
 		for(int i = 0; i<snake_init_length; i++) {
 			snake.push(ii(i+init_x,0+init_y));
 		}
-		int maxiters = 50;
+		int maxiters = 3 * (M + N);
+		int additers = 1*(M+N);
 		int loops = maxiters;
 		// 1 north:0,-1
 		// 2 south:0,1
@@ -134,13 +134,15 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 		int score = 0;
 		int input_dim = n;
 		int t = input_dim / 2;
+		int fi = 0;
 		do
 		{
 			// printf("%d\n",(int)snake.size());
 			// maxiters = 50;
 			fflush(stdout);
 			if(foodEaten) {
-				food_pos =  ii(rand()%M, rand()%N);
+				food_pos =  ii(foods[fi][0],foods[fi][1]);
+				fi++;
 				foodEaten = false;
 			}
 			ii head = snake.back();
@@ -171,19 +173,33 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			// 	snake.push(haha);
 			// }
 			ii pos[8];
-			float dist[8];
-			for(int i=0;i < 8;i++) dist[i] = 100000;
+			float dist[8][3];
+			for(int i=0;i < 8;i++) {
+				for(int j = 0; j < 3; j++) {
+					dist[i][j] = 2*max(M, N);
+				}
+			}
 			int k = 0;
 			for(int i=-1;i<=1;i++) {
 				for(int j=-1; j<=1;j++) {
-					if (i==0&&j==0) continue;
-					dist[k] = min(abs(i)*((i+1)/2)*N-i*abs(x),abs(j)*((j+1)/2)*N-j*abs(y));
+					if (i == 0 && j == 0 ) {
+						continue;
+					} else if(i == 0) {
+						dist[k][0] = (j > 0) * N - j * y;
+					} else if(j == 0) {
+						dist[k][0] = (i > 0) * M - i * x;
+					} else {
+						dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
+					}
+
 					int u,v;
 					// food_pos
 					u = food_pos.first - x;
 					v = food_pos.second - y;
 					if(check(u,v,i,j)) {
-						dist[k] = max(dist[k], float(abs(u)+abs(v)));
+						if(abs(dist[k][1]) > float(abs(u)+abs(v)) / (abs(i) + abs(j))) {
+							dist[k][1] = float(abs(u)+abs(v)) / (abs(i) + abs(j));
+						}
 					}
 					for(int ti=0; ti < snake_size; ti++) {
 						ii haha = snake.front();
@@ -191,7 +207,9 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 						u = haha.first - x;
 						v = haha.second - y;
 						if(check(u,v,i,j)) {
-							dist[k] = max(dist[k], float(abs(u)+abs(v))/(abs(i)+abs(j)));
+							if(abs(dist[k][2]) > float(abs(u)+abs(v))/(abs(i)+abs(j))) {
+								dist[k][2] = float(abs(u)+abs(v))/(abs(i)+abs(j));
+							}
 						}
 						// if(haha.first>=x-t && haha.first <= x+t && haha.second>=y-t && haha.second<=y+t) {
 						// 	in[haha.first-(x-t)][haha.second-(y-t)] = 2;
@@ -216,7 +234,12 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			// 2 south:0,1
 			// 3 east: 1,0
 			// 4 west:-1,0
-			int com = forward(dist, genes + ind * GENOME_LENGTH);
+
+			// for(int i = 0; i < 8; i++) {
+			// 	printf("i: %d | dist: %f\n", i, dist[i]);
+			// }
+
+			int com = forward(&dist[0][0], genes + ind * GENOME_LENGTH);
 			
 			// cout << "ind = " << ind << " | com = " << com << endl;
 			
@@ -267,6 +290,10 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 					dir = ii(0,-1);
 				}
 			}
+			else if(com == 3) {
+				snakeIsAlive = false;
+				break;
+			}
 			// cout << "Done with motion direction" << endl;
 			// check if the snake eats the food in the next move
 			head = ii(head.first+dir.first, head.second+dir.second); 
@@ -279,7 +306,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			}
 			else {
 				score += 1;
-				loops = maxiters;
+				loops += additers;
 				foodEaten = true;
 			}
 
@@ -290,7 +317,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 			if(x<0||y<0||x>=M||y>=N) {
 				// crossed the boundart game over
 				// cout << x << " " << y << " " << M << " " << N << endl;
-				printf("Game Over");
+				// printf("Game Over\n");
 				snakeIsAlive = false;
 				break;
 			}
@@ -300,7 +327,7 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 				ii haha = snake.front();
 				snake.pop();
 				if(i < snake_size-1 && haha.first == x && haha.second == y) {
-					cout << "Snake bit itself" << endl;
+					// cout << "Snake bit itself" << endl;
 					// cout << i << " "<< x << " " << y << " " << haha.first << " " << haha.second << endl;
 					snakeIsAlive = false;
 					break;
@@ -318,7 +345,8 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 				/// display the boundary
 				rectangle(0+off_x,0+off_y,ss_x+off_x,ss_y+off_y);
 				// display the food
-				circle(off_x+food_pos.first*ps_x+ps_x/2, off_y+food_pos.second*ps_y+ps_y/2,ps_x/2);
+				circle(off_x+food_pos.first*ps_x+ps_x/2, off_y+food_pos.second*ps_y+ps_y/2, ps_x/2);
+				floodfill(off_x+food_pos.first*ps_x+ps_x/2, off_y+food_pos.second*ps_y+ps_y/2, RED);
 				// display the snake
 				snake_size = snake.size();
 				for(int k=0; k < snake_size; k++) {
@@ -328,13 +356,21 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 					int st_y = off_y+x.second*ps_y;
 					int en_x = st_x + ps_x;
 					int en_y = st_y + ps_y;
-					rectangle(st_x,st_y,en_x,en_y);
+					rectangle(st_x, st_y, en_x, en_y);
 					snake.push(x);
 				}
-				delay(20);
+
+				outtextxy(ss_x * 1.1, ss_y / 2 - 20, &string("Generation: " + to_string(generation_id))[0]);
+				outtextxy(ss_x * 1.1, ss_y / 2, &string("Score: " + to_string(score))[0]);
+				outtextxy(ss_x * 1.1, ss_y / 2 + 20, &string("Max score: " + to_string(max_score))[0]);
+				delay(10);
 			}
 
-		}while(snakeIsAlive && loops--);
+		}while(snakeIsAlive && loops-- && fi < num_foods);
+
+		if(visualize) {
+			outtextxy(ss_x / 2 - 40, ss_y / 2, &string("Game Over")[0]);
+		}
 
 		scores[ind] = score;
 	}
@@ -342,10 +378,8 @@ int* evaluate(float *genes, int num_organisms, bool visualize) {
 	return scores;
 }
 
-int *fitness_score = NULL, max_score;
-
 void createGenomes() {
-	GENOME_LENGTH = n * m1 + m1 + m1 * m2 + m2 + m2 * o + o;
+	GENOME_LENGTH = n * m1 + m1 + m1 * o + o;
 	
 	organism = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
 
@@ -362,19 +396,17 @@ void createGenomes() {
 int selection(float selection_cutoff) {
 	int selected = 0;
 	float *new_generation = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
-	random_device rd;
-	uniform_real_distribution<float> frand(0, 1);
-
+	
+	ii list[POPULATION_SIZE];
+	
 	for(int i = 0; i < POPULATION_SIZE; i++) {
-		if(frand(rd) * fitness_score[i] / (max_score + 1) > selection_cutoff) {
-			copy(organism + i * GENOME_LENGTH, organism + (i + 1) * GENOME_LENGTH, new_generation + selected * GENOME_LENGTH);
-			selected++;
-		}
+		list[i] = {-fitness_score[i], i};
 	}
 
-	while(selected < 16) {
-		int temp = rand()%POPULATION_SIZE;
-		copy(organism + temp * GENOME_LENGTH, organism + (temp + 1) * GENOME_LENGTH, new_generation + selected * GENOME_LENGTH);
+	sort(list, list + POPULATION_SIZE);
+
+	for(int i = 0; i < int(POPULATION_SIZE * selection_cutoff); i++) {
+		copy(organism + list[i].second * GENOME_LENGTH, organism + (list[i].second + 1) * GENOME_LENGTH, new_generation + selected * GENOME_LENGTH);
 		selected++;
 	}
 
@@ -388,27 +420,85 @@ void crossover(int num_parents) {
 
 	int parent[2];
 
-	while(total < POPULATION_SIZE) {
-		parent[0] = rand() % num_parents;
-		parent[1] = rand() % num_parents;
+	random_device rd;
+	uniform_int_distribution<int> irand1(0, num_parents-1);
+	uniform_int_distribution<int> irand2(0, GENOME_LENGTH-1);
 
-		for(int i = 0; i < GENOME_LENGTH; i++) {
-			organism[total * GENOME_LENGTH + i] = organism[parent[rand() % 2] * GENOME_LENGTH + i];
+	int pos;
+
+	while(total < POPULATION_SIZE) {
+		parent[0] = irand1(rd);
+		parent[1] = irand1(rd);
+
+		pos = irand2(rd);
+
+		for(int i = 0; i <= pos; i++) {
+			organism[total * GENOME_LENGTH + i] = organism[parent[0] * GENOME_LENGTH + i];
+		}
+
+		for(int i = pos+1; i < GENOME_LENGTH; i++) {
+			organism[total * GENOME_LENGTH + i] = organism[parent[1] * GENOME_LENGTH + i];
 		}
 
 		total++;
 	}
 }
 
+void select_and_cross() {
+	float *new_generation = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
+
+	int cum_sum[POPULATION_SIZE];
+
+	cum_sum[0] = fitness_score[0];
+
+	for(int i = 1; i < POPULATION_SIZE; i++) {
+		cum_sum[i] = cum_sum[i-1] + fitness_score[i] + 1;
+	}
+
+	int parent[2], temp[2], pos;
+
+	random_device rd;
+	uniform_int_distribution<int> irand1(0, cum_sum[POPULATION_SIZE-1] - 1);
+	uniform_int_distribution<int> irand2(0, GENOME_LENGTH-1);
+
+	for(int i = 0; i < POPULATION_SIZE; i++) {
+		temp[0] = irand1(rd);
+		temp[1] = irand1(rd);
+
+		for(int k = 0; k < 2; k++) {
+			for(int j = 0; j < POPULATION_SIZE; j++) {
+				if(temp[k] < cum_sum[j]) {
+					parent[k] = j;
+					break;
+				}
+			}
+		}
+		pos = irand2(rd);
+
+		for(int j = 0; j <= pos; j++) {
+			new_generation[i * GENOME_LENGTH + j] = organism[parent[0] * GENOME_LENGTH + j];
+		}
+
+		for(int j = pos+1; j < GENOME_LENGTH; j++) {
+			new_generation[i * GENOME_LENGTH + j] = organism[parent[1] * GENOME_LENGTH + j];
+		}
+	}
+
+	free(organism);
+	organism = new_generation;	
+}
+
 void mutate(float mutation_rate) {
 	random_device rd;
 	uniform_real_distribution<float> frand1(0, 1);
-	uniform_real_distribution<float> frand2(-1, 1);
+	normal_distribution<float> frand2(0.0, 1.0);
 	
 	for(int i = 0; i < POPULATION_SIZE; i++) {
 		for(int j = 0; j < GENOME_LENGTH; j++) {
 			if(frand1(rd) < mutation_rate) {
-				organism[i * GENOME_LENGTH + j] *= (1 + 0.02 * frand2(rd));
+				organism[i * GENOME_LENGTH + j] += frand2(rd) / 5.0;
+				organism[i + GENOME_LENGTH + j] = max(-1.0f, organism[i + GENOME_LENGTH + j]);
+				organism[i + GENOME_LENGTH + j] = min(1.0f, organism[i + GENOME_LENGTH + j]);
 			}
 		}
 	}
@@ -432,15 +522,25 @@ int main() {
 	fprintf(fout, "NUM_GENERATIONS = %d\n", NUM_GENERATIONS);
 	fprintf(fout, "POPULATION_SIZE = %d\n", POPULATION_SIZE);
 	fprintf(fout, "GENOME_LENGTH = %d\n", GENOME_LENGTH);
-
+		// int num_foods = 100;
+		// int foods[num_foods][2];
+		// for(int k=0; k < num_foods; k++) {
+		// 	foods[k][0] = (rand())%M;
+		// 	foods[k][1] = (rand())%N;
+		// }
 	for(int i = 0; i < NUM_GENERATIONS; i++) {
 		int local_max = -1, local_best;
 
 		if(fitness_score != NULL) {
 			free(fitness_score);
 		}
-
-		fitness_score = evaluate(organism, POPULATION_SIZE, false);
+		int num_foods = 100;
+		int foods[num_foods][2];
+		for(int k=0; k < num_foods; k++) {
+			foods[k][0] = (rand())%M;
+			foods[k][1] = (rand())%N;
+		}
+		fitness_score = evaluate(organism, POPULATION_SIZE, i, false, foods, num_foods);
 
 		for(int j = 0; j < POPULATION_SIZE; j++) {
 			if(local_max < fitness_score[j]) {
@@ -454,15 +554,16 @@ int main() {
 		}
 		fprintf(fout, "\n");
 
-		free(evaluate(organism + local_best * GENOME_LENGTH, 1, true));
+		free(evaluate(organism + local_best * GENOME_LENGTH, 1, i, true, foods, num_foods));
 
 		max_score = max(max_score, local_max);
 
 		printf("Score after generation %d => local: %d | max: %d\n", i, local_max, max_score);
-		int selected = selection(0.15);
-
-		crossover(selected);
-		mutate(1e-3);
+		
+		// int selected = selection(0.15);
+		// crossover(selected);
+		select_and_cross();
+		mutate(1e-2);
 	}
 
 	free(organism);
