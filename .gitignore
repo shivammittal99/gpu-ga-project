@@ -1,3 +1,4 @@
 **/*.vscode
-flappy-serial
-flappy-parallel
+snake-serial
+snake-parallel
+genomes.txt

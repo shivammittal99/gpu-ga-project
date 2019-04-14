@@ -1,5 +1,11 @@
-flappy-serial: serial/serial.cpp serial/genome.h serial/environment.hpp serial/neuralnet.h
-	g++ -o flappy-serial serial/serial.cpp -lm
+all: snake-serial snake-parallel
 
-clean: flappy-serial
-	@rm flappy-serial
+snake-serial: snake-serial.cpp
+	g++ -std=c++14 -o snake-serial snake-serial.cpp
+
+snake-parallel: snake-parallel.cu
+	nvcc -std=c++14 -o snake-parallel snake-parallel.cu
+
+clean:
+	@touch snake-serial snake-parallel
+	@rm snake-serial snake-parallel
