@@ -560,9 +560,9 @@ int main() {
 
 		printf("Score after generation %d => local: %d | max: %d\n", i, local_max, max_score);
 		
-		// int selected = selection(0.15);
-		// crossover(selected);
-		select_and_cross();
+		int selected = selection(0.15);
+		crossover(selected);
+		// select_and_cross();
 		mutate(1e-2);
 	}
 
