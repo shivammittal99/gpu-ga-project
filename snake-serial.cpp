@@ -1,17 +1,31 @@
+/*	CS6023 GPU Programming
+ 	Project - Genetic Algorithm to optimise snakes game
+ 		Done By, 
+ 		Shivam Mittal, cs16b038
+        Rachit Tibrewal, cs16b022
+        R Sai Harshini, cs16b112
+ 	Serial Code
+*/
 #pragma once
 #include <graphics.h>
 #include <bits/stdc++.h>
 
 using namespace std;
+typedef pair<int, int> ii;
 
 int POPULATION_SIZE = 4096;
 int NUM_GENERATIONS = 200;
 
+// Defining the parameters in each layer of the neural network.
 int n = 24, m1 = 16, o = 4;
 
-int GENOME_LENGTH;
-
+int GENOME_LENGTH;	//Genome length of each organism
 float *organism;
+
+
+
+
+// Neural Network Computation
 
 /* Compute output of one fully connected layer
  * input: n
@@ -81,10 +95,15 @@ int forward(float *input, float gene[]) {
 	return res;
 }
 
+
+
+
+// Genetic Algorithm
+//1. Fitness Score computation
+
 int *fitness_score = NULL, max_score;
 
-typedef pair<int, int> ii;
-
+// Utility funtion for evaluating the fitness function
 bool check(int u, int v, int i, int j) {
 	if(u == 0 && v !=0) {
 		if(i==u && j == v / abs(v)) return true;
@@ -97,11 +116,18 @@ bool check(int u, int v, int i, int j) {
 	}
 	return false;
 }
+
 const int M = 80;
 const int N = 80;
+
+//Function to evalate the fitness function.
 int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize, int foods[][2], int num_foods) {
+
 	int *scores = (int *) malloc(sizeof(int) * num_organisms);
+
 	for(int ind = 0; ind < num_organisms; ind++) {
+
+		// for visalisation part.
 		const int off_x = 10;
 		const int off_y = 10;
 		const int ss_x = 400;
@@ -113,18 +139,24 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 		bool snakeIsAlive = true;
 		bool foodEaten = true;
 		ii food_pos;
-		queue<pair<int,int>> snake;
+		queue<pair<int,int>> snake; // Stores the coordinates along the length of the snake.
 		int snake_init_length = 5;
 		int init_x = rand()%(M-snake_init_length-2);
 		int init_y = rand()%(M-snake_init_length-2);
 		init_x = M/2;
 		init_y = N/2;
+
+		// Initial coordinates along the length of the snake.
 		for(int i = 0; i<snake_init_length; i++) {
 			snake.push(ii(i+init_x,0+init_y));
 		}
+
+
 		int maxiters = 3 * (M + N);
 		int additers = 1*(M+N);
 		int loops = maxiters;
+
+		// directions.
 		// 1 north:0,-1
 		// 2 south:0,1
 		// 3 east: 1,0
@@ -137,8 +169,6 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 		int fi = 0;
 		do
 		{
-			// printf("%d\n",(int)snake.size());
-			// maxiters = 50;
 			fflush(stdout);
 			if(foodEaten) {
 				food_pos =  ii(foods[fi][0],foods[fi][1]);
@@ -148,37 +178,16 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 			ii head = snake.back();
 			int x = head.first;
 			int y = head.second;
-			// cout << "0" << endl;
-			// create the input for Neural Network        
-			// int in[input_dim][input_dim];
-			// for(int i = x-t, i1 = 0; i <= x+t; i++, i1++) {
-			// 	for(int j=y-t, j1=0; j <= y+t; j++, j1++) {
-			// 		in[i1][j1] = 0;
-			// 		if(i < 0 || j < 0 || i >= M || j >= N) {
-			// 			in[i1][j1] = 1;
-			// 		}
-			// 		else if(i == food_pos.first && j == food_pos.second) {
-			// 			in[i1][j1] = 3;
-			// 		}
-			// 	}
-			// }
-			// // cout << "1" << endl;
 			int snake_size = snake.size();
-			// for(int i=0; i < snake_size; i++) {
-			// 	ii haha = snake.front();
-			// 	snake.pop();
-			// 	if(haha.first>=x-t && haha.first <= x+t && haha.second>=y-t && haha.second<=y+t) {
-			// 		in[haha.first-(x-t)][haha.second-(y-t)] = 2;
-			// 	}
-			// 	snake.push(haha);
-			// }
 			ii pos[8];
 			float dist[8][3];
+
 			for(int i=0;i < 8;i++) {
 				for(int j = 0; j < 3; j++) {
 					dist[i][j] = 2*max(M, N);
 				}
 			}
+
 			int k = 0;
 			for(int i=-1;i<=1;i++) {
 				for(int j=-1; j<=1;j++) {
@@ -193,7 +202,6 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 					}
 
 					int u,v;
-					// food_pos
 					u = food_pos.first - x;
 					v = food_pos.second - y;
 					if(check(u,v,i,j)) {
@@ -201,6 +209,7 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 							dist[k][1] = float(abs(u)+abs(v)) / (abs(i) + abs(j));
 						}
 					}
+
 					for(int ti=0; ti < snake_size; ti++) {
 						ii haha = snake.front();
 						snake.pop();
@@ -211,20 +220,12 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 								dist[k][2] = float(abs(u)+abs(v))/(abs(i)+abs(j));
 							}
 						}
-						// if(haha.first>=x-t && haha.first <= x+t && haha.second>=y-t && haha.second<=y+t) {
-						// 	in[haha.first-(x-t)][haha.second-(y-t)] = 2;
-						// }
 						snake.push(haha);
 					}
 					k++;						
 				}
 			}
-			// cout << "Created input for neural network" << endl;
-			// Take the input here
-			// get the motion direction
-			/**
-			 * Code here
-			 */
+	
 			/**
 			 * 0 straight
 			 * 1 left
@@ -234,14 +235,9 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 			// 2 south:0,1
 			// 3 east: 1,0
 			// 4 west:-1,0
-
-			// for(int i = 0; i < 8; i++) {
-			// 	printf("i: %d | dist: %f\n", i, dist[i]);
-			// }
-
 			int com = forward(&dist[0][0], genes + ind * GENOME_LENGTH);
 			
-			// cout << "ind = " << ind << " | com = " << com << endl;
+	
 			
 			if(com == 0) {
 				// no change to direction
@@ -294,7 +290,7 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 				snakeIsAlive = false;
 				break;
 			}
-			// cout << "Done with motion direction" << endl;
+			
 			// check if the snake eats the food in the next move
 			head = ii(head.first+dir.first, head.second+dir.second); 
 			snake.push(head);
@@ -316,26 +312,23 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 			y = head.second;
 			if(x<0||y<0||x>=M||y>=N) {
 				// crossed the boundart game over
-				// cout << x << " " << y << " " << M << " " << N << endl;
-				// printf("Game Over\n");
 				snakeIsAlive = false;
 				break;
 			}
+
 			// check if the snake eats it self
 			snake_size = snake.size();
 			for(int i=0; i < snake_size; i++) {
 				ii haha = snake.front();
 				snake.pop();
 				if(i < snake_size-1 && haha.first == x && haha.second == y) {
-					// cout << "Snake bit itself" << endl;
-					// cout << i << " "<< x << " " << y << " " << haha.first << " " << haha.second << endl;
 					snakeIsAlive = false;
 					break;
 				}            
 				snake.push(haha);
 			}
 			if(!snakeIsAlive) {
-				// cout << "snake is not alive" << endl;
+				//snake is not alive
 				break;
 			}
 			if(visualize) {
@@ -378,7 +371,11 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 	return scores;
 }
 
+
+// Function to generate the initil genome for the all organisms.
+// Each gene in the genome of the organsim corresponds weight of one of the edge in the neural network.
 void createGenomes() {
+	// length of genome in an organism is equla to the total no.of weights in the neural network.
 	GENOME_LENGTH = n * m1 + m1 + m1 * o + o;
 	
 	organism = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
@@ -393,6 +390,8 @@ void createGenomes() {
 	}
 }
 
+
+// Function to select the best (selection_cutoff)% of the population in each generation where the organisms are sorted in the decreasing of the fitness scores.
 int selection(float selection_cutoff) {
 	int selected = 0;
 	float *new_generation = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
@@ -415,6 +414,9 @@ int selection(float selection_cutoff) {
 	return selected;
 }
 
+
+// Function to crossover between the the best population selected by the selection function and create the next generation.
+// The next generation comprises of the best population selected in the current generation and the organisms generated by their crossover.
 void crossover(int num_parents) {
 	int total = num_parents;
 
@@ -444,50 +446,7 @@ void crossover(int num_parents) {
 	}
 }
 
-void select_and_cross() {
-	float *new_generation = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
-
-	int cum_sum[POPULATION_SIZE];
-
-	cum_sum[0] = fitness_score[0];
-
-	for(int i = 1; i < POPULATION_SIZE; i++) {
-		cum_sum[i] = cum_sum[i-1] + fitness_score[i] + 1;
-	}
-
-	int parent[2], temp[2], pos;
-
-	random_device rd;
-	uniform_int_distribution<int> irand1(0, cum_sum[POPULATION_SIZE-1] - 1);
-	uniform_int_distribution<int> irand2(0, GENOME_LENGTH-1);
-
-	for(int i = 0; i < POPULATION_SIZE; i++) {
-		temp[0] = irand1(rd);
-		temp[1] = irand1(rd);
-
-		for(int k = 0; k < 2; k++) {
-			for(int j = 0; j < POPULATION_SIZE; j++) {
-				if(temp[k] < cum_sum[j]) {
-					parent[k] = j;
-					break;
-				}
-			}
-		}
-		pos = irand2(rd);
-
-		for(int j = 0; j <= pos; j++) {
-			new_generation[i * GENOME_LENGTH + j] = organism[parent[0] * GENOME_LENGTH + j];
-		}
-
-		for(int j = pos+1; j < GENOME_LENGTH; j++) {
-			new_generation[i * GENOME_LENGTH + j] = organism[parent[1] * GENOME_LENGTH + j];
-		}
-	}
-
-	free(organism);
-	organism = new_generation;	
-}
-
+// Function to mutate the genomes of each organism. Mutation is one of the fundamental concept of genetic algorithms. 
 void mutate(float mutation_rate) {
 	random_device rd;
 	uniform_real_distribution<float> frand1(0, 1);
@@ -495,7 +454,8 @@ void mutate(float mutation_rate) {
 	
 	for(int i = 0; i < POPULATION_SIZE; i++) {
 		for(int j = 0; j < GENOME_LENGTH; j++) {
-			if(frand1(rd) < mutation_rate) {
+			if(frand1(rd) < mutation_rate) // Making the proability of mutation very small.
+			{
 				organism[i * GENOME_LENGTH + j] += frand2(rd) / 5.0;
 				organism[i + GENOME_LENGTH + j] = max(-1.0f, organism[i + GENOME_LENGTH + j]);
 				organism[i + GENOME_LENGTH + j] = min(1.0f, organism[i + GENOME_LENGTH + j]);
@@ -504,9 +464,12 @@ void mutate(float mutation_rate) {
 	}
 }
 
-int main() {
+
+int main() 
+{
 	srand(time(NULL));
 
+	// Graph for visualisation part.
 	int gd = DETECT, gm; 
     initgraph(&gd, &gm, NULL);
 
@@ -522,26 +485,23 @@ int main() {
 	fprintf(fout, "NUM_GENERATIONS = %d\n", NUM_GENERATIONS);
 	fprintf(fout, "POPULATION_SIZE = %d\n", POPULATION_SIZE);
 	fprintf(fout, "GENOME_LENGTH = %d\n", GENOME_LENGTH);
-		// int num_foods = 100;
-		// int foods[num_foods][2];
-		// for(int k=0; k < num_foods; k++) {
-		// 	foods[k][0] = (rand())%M;
-		// 	foods[k][1] = (rand())%N;
-		// }
+	
 	for(int i = 0; i < NUM_GENERATIONS; i++) {
 		int local_max = -1, local_best;
 
 		if(fitness_score != NULL) {
 			free(fitness_score);
 		}
+
+		// Generating the food particles randomly, for the generation
 		int num_foods = 100;
 		int foods[num_foods][2];
 		for(int k=0; k < num_foods; k++) {
 			foods[k][0] = (rand())%M;
 			foods[k][1] = (rand())%N;
 		}
-		fitness_score = evaluate(organism, POPULATION_SIZE, i, false, foods, num_foods);
 
+		fitness_score = evaluate(organism, POPULATION_SIZE, i, false, foods, num_foods);
 		for(int j = 0; j < POPULATION_SIZE; j++) {
 			if(local_max < fitness_score[j]) {
 				local_max = fitness_score[j];
@@ -549,6 +509,7 @@ int main() {
 			}
 		}
 
+		// printing the genome of the best organism in the generation to the file.
 		for(int k = 0; k < GENOME_LENGTH; k++) {
 			fprintf(fout, "%f ", organism[local_best * GENOME_LENGTH + k]);
 		}
@@ -562,7 +523,6 @@ int main() {
 		
 		int selected = selection(0.15);
 		crossover(selected);
-		// select_and_cross();
 		mutate(1e-2);
 	}
 
