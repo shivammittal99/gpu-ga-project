@@ -1,7 +1,7 @@
 #pragma once
 #include <bits/stdc++.h>
-#include <thrust/random.h>
-#include <thrust/device_vector.h>
+#include <curand.h>
+#include <curand_kernel.h>
 
 using namespace std;
 
@@ -13,6 +13,12 @@ int n = 24, m1 = 16, o = 4;
 int GENOME_LENGTH;
 
 float *organism;
+
+__global__ void initCurand(curandState *state)
+{
+	int id = threadIdx.x + blockIdx.x*blockDim.x;/*Each thread gets same seed, a different sequence number,no offset*/
+	curand_init(1234, id, 0, &state[id]);
+}
 
 /* Compute output of one fully connected layer
  * input: n
@@ -316,16 +322,22 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 
 
 
-__global__ void createGenomes(float* organism, int genomeLength )
+__global__ void createGenomes(curandState *globalstates,float* organism, int genomeLength )
 {
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	curandState localState = globalstates[idx];
+
 	int i = blockIdx.x * genomeLength + threadIdx.x;
 
-	thrust::default_random_engine randEng;
+	/*thrust::default_random_engine randEng;
 	thrust::uniform_real_distribution<float> frand(-0.1, 0.1);
-	randEng.discard(i);
+	randEng.discard(i);*/
 
 	if(threadIdx.x < genomeLength)	// within the genome length of the organism allocated to the block
-		organism[i] = frand(randEng);
+		organism[i] = (curand_uniform(&localState) - 0.5)/0.5; // float rand number from -1 to 1
+
+	globalstates[idx] = localState;
+
 }
 
 __global__ void selection_parallel(float* current_generation, float* new_generation, int *index_list, int selected, int genomeLength )
@@ -384,20 +396,22 @@ int selection(float selection_cutoff) {
 
 
 //each thread handles one organism
-__global__ void crossover_parallel(float* current_generation, int num_parents, int genomeLength, int population_size )
+__global__ void crossover_parallel(curandState *globalstates,float* current_generation, int num_parents, int genomeLength, int population_size )
 {
 	int idx = (blockDim.x * blockIdx.x + threadIdx.x)+num_parents;
 	if(idx < population_size)
 	{
-		thrust::default_random_engine randEng;
+		int idx = blockDim.x * blockIdx.x + threadIdx.x;
+		curandState localState = globalstates[idx];
+		/*thrust::default_random_engine randEng;
 		thrust::uniform_int_distribution<int> irand1(0, num_parents-1);
 		thrust::uniform_int_distribution<int> irand2(0, genomeLength-1);
 		randEng.discard(idx);
+*/
+		int parent_0 = curand(&localState) % num_parents;
+		int parent_1 = curand(&localState) % num_parents;
 
-		int parent_0 = irand1(randEng);
-		int parent_1 = irand1(randEng);
-
-		int pos = irand2(randEng);
+		int pos = curand(&localState) % genomeLength;
 
 		for(int i = 0; i <= pos; i++) 
 		{
@@ -408,12 +422,12 @@ __global__ void crossover_parallel(float* current_generation, int num_parents, i
 		{
 			current_generation[idx * genomeLength + i] = current_generation[parent_1 * genomeLength + i];
 		}
+		globalstates[idx] = localState;
 	} 
 }
 
-void crossover(int num_parents) 
+void crossover(curandState *globalstates,int num_parents) 
 {
-
 	size_t size1 = sizeof(float) * POPULATION_SIZE * GENOME_LENGTH;
 
 	float* d_current_generation;	
@@ -424,32 +438,36 @@ void crossover(int num_parents)
   	int threadsPerBlock = 256;
 	int blocksPerGrid = 16;
 
-	crossover_parallel<<<blocksPerGrid, threadsPerBlock>>>(d_current_generation, num_parents, GENOME_LENGTH, POPULATION_SIZE);
+	crossover_parallel<<<blocksPerGrid, threadsPerBlock>>>(globalstates,d_current_generation, num_parents, GENOME_LENGTH, POPULATION_SIZE);
 
 	cudaMemcpy(organism, d_current_generation, size1,cudaMemcpyDeviceToHost);
 }
 
-__global__ void mutate_parallel(float* organism, int genomeLength ,int mutation_rate)
+__global__ void mutate_parallel(curandState *globalstates,float* organism, int genomeLength ,int mutation_rate)
 {
 	int i = blockIdx.x * genomeLength + threadIdx.x;
 
-	thrust::default_random_engine randEng;
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	curandState localState = globalstates[idx];
+
+	/*thrust::default_random_engine randEng;
 	thrust::uniform_real_distribution<float> frand1(0, 1);
 	thrust::normal_distribution<float> frand2(0.0, 1.0);
-	randEng.discard(i);
+	randEng.discard(i);*/
 
 	if(threadIdx.x < genomeLength)	// within the genome length of the organism allocated to the block
 	{
-		if(frand1(randEng) < mutation_rate) 
+		if(((curand_uniform(&localState) - 0.5)/0.5) < mutation_rate) 
 		{
-			organism[i] += frand2(randEng) / 5.0;
+			organism[i] += curand_normal(&localState) / 5.0;
 			organism[i] = max(-1.0f, organism[i]);
 			organism[i] = min(1.0f, organism[i]);
 		}
 	}
+	globalstates[idx] = localState;
 }
 
-void mutate(float mutation_rate) {
+void mutate(curandState *globalstates,float mutation_rate) {
 
 	size_t size1 = sizeof(float) * POPULATION_SIZE * GENOME_LENGTH;
 
@@ -461,13 +479,17 @@ void mutate(float mutation_rate) {
   	int threadsPerBlock = 512;
 	int blocksPerGrid = 4096;
 
-	mutate_parallel<<<blocksPerGrid, threadsPerBlock>>>(d_organism,GENOME_LENGTH,mutation_rate);
+	mutate_parallel<<<blocksPerGrid, threadsPerBlock>>>(globalstates,d_organism,GENOME_LENGTH,mutation_rate);
 
 	cudaMemcpy(organism, d_organism, size1,cudaMemcpyDeviceToHost);
 }
 
 int main() {
 	srand(time(NULL));
+
+	curandState *deviceStates;
+	cudaMalloc((void**)&deviceStates, 4096*512*sizeof(curandState));
+	initCurand<<<4096,512>>>(deviceStates);
 
 	
 	GENOME_LENGTH = n * m1 + m1 + m1 * o + o;
@@ -480,7 +502,7 @@ int main() {
 	int threadsPerBlock = 512;
 	int blocksPerGrid = 4096;
 
-	createGenomes<<<blocksPerGrid, threadsPerBlock>>>(d_organism,GENOME_LENGTH);
+	createGenomes<<<blocksPerGrid, threadsPerBlock>>>(deviceStates,d_organism,GENOME_LENGTH);
 
 	cudaMemcpy(organism, d_organism, size1,cudaMemcpyDeviceToHost);
 
@@ -528,8 +550,8 @@ int main() {
 		printf("Score after generation %d => local: %d | max: %d\n", i, local_max, max_score);
 		
 		int selected = selection(0.15);
-		crossover(selected);
-		mutate(1e-2);
+		crossover(deviceStates,selected);
+		mutate(deviceStates, 1e-2);
 	}
 
   	cudaFree(d_organism);
