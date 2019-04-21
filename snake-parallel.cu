@@ -316,16 +316,16 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 
 
 
-__global__ void createGenomes(float* organism, int genomeLength )
+__global__ void createGenomes(float* organism)
 {
-	int i = blockIdx.x * genomeLength + threadIdx.x;
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	thrust::default_random_engine randEng;
-	thrust::uniform_real_distribution<float> frand(-0.1, 0.1);
+	thrust::uniform_real_distribution<float> frand(-1, 1);
 	randEng.discard(i);
 
-	if(threadIdx.x < genomeLength)	// within the genome length of the organism allocated to the block
-		organism[i] = frand(randEng);
+	// if(threadIdx.x < genomeLength)	// within the genome length of the organism allocated to the block
+	organism[i] = frand(randEng);
 }
 
 __global__ void selection_parallel(float* current_generation, float* new_generation, int *index_list, int selected, int genomeLength )
@@ -374,7 +374,7 @@ int selection(float selection_cutoff) {
 	int blocksPerGrid = 1024;
 
 	selection_parallel<<<blocksPerGrid, threadsPerBlock>>>(d_current_generation, d_new_generation, d_index_list, selected, GENOME_LENGTH);
-
+	cudaDeviceSynchronize();
 	cudaMemcpy(new_generation, d_new_generation, size1,cudaMemcpyDeviceToHost);
 
 	free(organism);
@@ -425,7 +425,7 @@ void crossover(int num_parents)
 	int blocksPerGrid = 16;
 
 	crossover_parallel<<<blocksPerGrid, threadsPerBlock>>>(d_current_generation, num_parents, GENOME_LENGTH, POPULATION_SIZE);
-
+	cudaDeviceSynchronize();
 	cudaMemcpy(organism, d_current_generation, size1,cudaMemcpyDeviceToHost);
 }
 
@@ -462,7 +462,7 @@ void mutate(float mutation_rate) {
 	int blocksPerGrid = 4096;
 
 	mutate_parallel<<<blocksPerGrid, threadsPerBlock>>>(d_organism,GENOME_LENGTH,mutation_rate);
-
+	cudaDeviceSynchronize();
 	cudaMemcpy(organism, d_organism, size1,cudaMemcpyDeviceToHost);
 }
 
@@ -480,10 +480,22 @@ int main() {
 	int threadsPerBlock = 512;
 	int blocksPerGrid = 4096;
 
-	createGenomes<<<blocksPerGrid, threadsPerBlock>>>(d_organism,GENOME_LENGTH);
-
+	createGenomes<<<blocksPerGrid, GENOME_LENGTH>>>(d_organism);
+	cudaDeviceSynchronize();
 	cudaMemcpy(organism, d_organism, size1,cudaMemcpyDeviceToHost);
-
+	double mu = 0;
+	double sigma = 0;
+	int L = POPULATION_SIZE*GENOME_LENGTH;
+	cout  << "Finding the mean and sigma" << endl;
+	for(int i=0;i < L; i++) {
+		mu += *(organism+i);
+	}
+	mu = mu / L;
+	for(int i=0; i < L; i++) {
+		sigma += pow((*(organism+i)-mu),2);
+	}
+	sigma /= L;
+	printf("mean: %lf | sigma: %lf\n", mu, sigma);
 	printf("Genome length: %d\n", GENOME_LENGTH);
 	printf("Generation size: %d\n", POPULATION_SIZE);
 

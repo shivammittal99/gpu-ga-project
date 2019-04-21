@@ -21,7 +21,9 @@ int n = 24, m1 = 16, o = 4;
 
 int GENOME_LENGTH;	//Genome length of each organism
 float *organism;
-
+std::random_device oracle{};
+auto tempo = oracle();    
+mt19937 rd{tempo};
 
 
 
@@ -380,7 +382,7 @@ void createGenomes() {
 	
 	organism = (float *) malloc(sizeof(float) * POPULATION_SIZE * GENOME_LENGTH);
 
-	random_device rd;
+
 	uniform_real_distribution<float> frand(-1, 1);
 
 	for(int i = 0; i < POPULATION_SIZE; i++) {
@@ -422,7 +424,6 @@ void crossover(int num_parents) {
 
 	int parent[2];
 
-	random_device rd;
 	uniform_int_distribution<int> irand1(0, num_parents-1);
 	uniform_int_distribution<int> irand2(0, GENOME_LENGTH-1);
 
@@ -448,7 +449,6 @@ void crossover(int num_parents) {
 
 // Function to mutate the genomes of each organism. Mutation is one of the fundamental concept of genetic algorithms. 
 void mutate(float mutation_rate) {
-	random_device rd;
 	uniform_real_distribution<float> frand1(0, 1);
 	normal_distribution<float> frand2(0.0, 1.0);
 	
@@ -467,14 +467,27 @@ void mutate(float mutation_rate) {
 
 int main() 
 {
-	srand(time(NULL));
+	cout << tempo << endl;
+	srand(42);
 
 	// Graph for visualisation part.
 	int gd = DETECT, gm; 
     initgraph(&gd, &gm, NULL);
 
 	createGenomes();
-
+	double mu = 0;
+	double sigma = 0;
+	int L = POPULATION_SIZE*GENOME_LENGTH;
+	cout  << "Finding the mean and sigma" << endl;
+	for(int i=0;i < L; i++) {
+		mu += *(organism+i);
+	}
+	mu = mu / L;
+	for(int i=0; i < L; i++) {
+		sigma += pow((*(organism+i)-mu),2);
+	}
+	sigma /= L;
+	printf("mean: %lf | sigma: %lf\n", mu, sigma);
 	printf("Genome length: %d\n", GENOME_LENGTH);
 	printf("Generation size: %d\n", POPULATION_SIZE);
 
@@ -515,7 +528,7 @@ int main()
 		}
 		fprintf(fout, "\n");
 
-		free(evaluate(organism + local_best * GENOME_LENGTH, 1, i, true, foods, num_foods));
+		free(evaluate(organism + local_best * GENOME_LENGTH, 1, i, false, foods, num_foods));
 
 		max_score = max(max_score, local_max);
 
