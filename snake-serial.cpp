@@ -457,8 +457,8 @@ void mutate(float mutation_rate) {
 			if(frand1(rd) < mutation_rate) // Making the proability of mutation very small.
 			{
 				organism[i * GENOME_LENGTH + j] += frand2(rd) / 5.0;
-				organism[i + GENOME_LENGTH + j] = max(-1.0f, organism[i + GENOME_LENGTH + j]);
-				organism[i + GENOME_LENGTH + j] = min(1.0f, organism[i + GENOME_LENGTH + j]);
+				organism[i * GENOME_LENGTH + j] = max(-1.0f, organism[i * GENOME_LENGTH + j]);
+				organism[i * GENOME_LENGTH + j] = min(1.0f, organism[i * GENOME_LENGTH + j]);
 			}
 		}
 	}
