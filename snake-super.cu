@@ -146,6 +146,7 @@ int *fitness_score = NULL, max_score;
 #define N 80
 #define Q_LEN 128
 #define THREAD_ID threadIdx.x
+#define BLOCK_ID blockIdx.x
 __device__
 bool check(int u, int v, int i, int j) {
 	if(u == 0 && v !=0) {
@@ -159,6 +160,8 @@ bool check(int u, int v, int i, int j) {
 	}
 	return false;
 }
+// #define DEB(t) if(THREAD_ID == 0 && BLOCK_ID == 0) t
+#define DEB(t) 0
 __global__
 void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 	/**
@@ -212,14 +215,17 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 		loops = maxiters;
 		score = 0;
 		fi = 0;
+		snake_motion = 3;
+		dir[0] = 1;
+		dir[1] = 0;
 	}
 	if(THREAD_ID < snake_init_length) {
 		snake[THREAD_ID][0] = THREAD_ID+init_x;
 		snake[THREAD_ID][1] = 0+init_y; 
 	}
 	__syncthreads();
-	if(THREAD_ID == 0)
-	printf("Organism initialized %d\n", blockIdx.x);
+	// if(THREAD_ID == 0 && BLOCK_ID == 0)
+	DEB(printf("Organism initialized %d\n", blockIdx.x));
 	if(THREAD_ID == 0) {
 		do
 		{
@@ -229,12 +235,14 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 				fi++;
 				foodEaten = false; 
 			}
+			DEB(printf("Food pos: %d,%d\n",food_pos[0], food_pos[1]));
 			int head[2];
 			head[0] = snake[(en-1+Q_LEN)%Q_LEN][0];
 			head[1] = snake[(en-1+Q_LEN)%Q_LEN][1]; 
 			int x = head[0];
 			int y = head[1];
 			int snake_size = (en-st+Q_LEN)%Q_LEN;
+			DEB(printf("head: (%d,%d) | snake size: %d\n", x,y,snake_size));
 			for(int i=0;i < 8; i++) {
 				for(int j = 0; j < 3; j++) {
 					dist[i][j] = 2*max(M, N);
@@ -267,7 +275,7 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 						haha[0] = snake[st][0];
 						haha[1] = snake[st][1];
 						// snake.pop();
-						en = (st+1+Q_LEN)%Q_LEN;
+						st = (st+1+Q_LEN)%Q_LEN;
 						u = haha[0] - x;
 						v = haha[1] - y;
 						if(check(u,v,i,j)) {
@@ -388,6 +396,7 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 			}
 			else if(com == 3) {
 				snakeIsAlive = false;
+				DEB(printf("com is 3, game over"));
 				break;
 			}
 			
@@ -414,9 +423,11 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 			// check if the snake crosses any boundaries
 			x = head[0];
 			y = head[1];
+			DEB(printf("Head now: %d,%d",x,y));
 			if(x<0||y<0||x>=M||y>=N) {
 				// crossed the boundart game over
 				snakeIsAlive = false;
+				DEB(printf("snake crossed the boundary\n"));
 				break;
 			}
 
@@ -427,7 +438,7 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 				haha[0] = snake[st][0];
 				haha[1] = snake[st][1];
 				// snake.pop();
-				en = (st+1+Q_LEN)%Q_LEN;
+				st = (st+1+Q_LEN)%Q_LEN;
 				if(i < snake_size-1 && haha[0] == x && haha[1] == y) {
 					snakeIsAlive = false;
 					break;
