@@ -1,3 +1,4 @@
+%%cuda --name snake-super.cu
 /*	CS6023 GPU Programming
  	Project - Genetic Algorithm to optimise snakes game
  		Done By, 
@@ -6,19 +7,13 @@
         R Sai Harshini, cs16b112
  	Parallel Code
 */
-#pragma once
+
 #include <bits/stdc++.h>
 #include <curand.h>
 #include <curand_kernel.h>
-using namespace std;
-typedef pair<int, int> ii;
 
-#define CUDA_CALL(x) do { if((x)!=cudaSuccess) { \
-    printf("Error at %s:%d\n",__FILE__,__LINE__);\
-    return EXIT_FAILURE;}} while(0)
-#define CURAND_CALL(x) do { if((x)!=CURAND_STATUS_SUCCESS) { \
-    printf("Error at %s:%d\n",__FILE__,__LINE__);\
-    return EXIT_FAILURE;}} while(0)
+using namespace std;
+
 #define cudaErrorTrace() {\
     cudaError_t err = cudaGetLastError();\
     if(err != cudaSuccess) {\
@@ -26,6 +21,9 @@ typedef pair<int, int> ii;
         exit(EXIT_FAILURE);\
     }\
 }
+
+typedef pair<int, int> ii;
+
 #define POPULATION_SIZE 4096
 #define NUM_GENERATIONS 300
 #define NUM_FOODS 256
@@ -36,52 +34,42 @@ typedef pair<int, int> ii;
 #define m1 16
 #define o 4
 
-int GENOME_LENGTH;	//Genome length of each organism
-float *organism;
 std::random_device oracle{};
 auto tempo = oracle();    
 mt19937 rd{tempo};
 
-__global__
-void initCurand(curandState *state)
-{
-	int id = threadIdx.x + blockIdx.x*blockDim.x;/*Each thread gets same seed, a different sequence number,no offset*/
-	curand_init(1234, id, 0, &state[id]);
-}
+int GENOME_LENGTH;
 
-// Genetic Algorithm
-//1. Fitness Score computation
+float *organism;
 
 int *fitness_score = NULL, max_score;
 
 #define M 80
 #define N 80
 #define Q_LEN 128
-#define THREAD_ID threadIdx.x
-#define BLOCK_ID blockIdx.x
+
 __device__
 bool check(int u, int v, int i, int j) {
-	if(u == 0 && v !=0) {
-		if(i==u && j == v / abs(v)) return true;
+	if(u == 0 && v != 0) {
+		if(i == u && j == v / abs(v)) {
+			return true;
+		}
 	}
-	else if(u!=0 && v == 0) {
-		if(i == u/abs(u) && j == v) return true;
+	else if(u != 0 && v == 0) {
+		if(i == u / abs(u) && j == v) {
+			return true;
+		}
 	}
-	else if(u!=0 && v!=0) {
-		if(i==u/abs(u) && j==v/abs(v)) return true;
+	else if(u != 0 && v != 0) {
+		if(i == u / abs(u) && j == v / abs(v)) {
+			return true;
+		}
 	}
 	return false;
 }
-// #define DEB(t) if(THREAD_ID == 0 && BLOCK_ID == 0) t
-#define DEB(t) 0
-#define SEQUENTIAL_START() if(THREAD_ID == 0) {
-#define SEQUENTIAL_END() }
+
 __global__
 void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
-	/**
-	Copy the gene from global memory to shared memory
-	*/
-	// ii food_pos;
 	__shared__ int food_pos[2];
 	__shared__ int snake[Q_LEN][2];
 	__shared__ int snake_init_length;
@@ -104,328 +92,269 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 	__shared__ float output2[o];
 	__shared__ int head[2];
 	__shared__ int snake_size;
-	int x,y;
+	__shared__ int x, y;
+	__shared__ int snakeIsAlive;
+	__shared__ int foodEaten;
+	
 	extern __shared__ float gene[];
-	int i = THREAD_ID;
+
+	int i = threadIdx.x;
+
 	while(i < GENOME_LENGTH) {
-		gene[i] = genes[blockIdx.x*GENOME_LENGTH+i];
+		gene[i] = genes[blockIdx.x * GENOME_LENGTH + i];
 		i += blockDim.x;
 	}
-	int init_x = M/2;
-	int init_y = N/2;
-	bool snakeIsAlive = true;
-	bool foodEaten = true;
 
-	if(THREAD_ID == 0) {
+	int init_x = M / 2;
+	int init_y = N / 2;
+
+	if(threadIdx.x == 0) {
 		input = &dist[0][0];
 		W1 = &gene[0];
-		b1 = &gene[n*m1];
-		W2 = &gene[n*m1+m1];
-		b2 = &gene[n*m1 + m1 + m1*o];
+		b1 = &gene[n * m1];
+		W2 = &gene[n * m1 + m1];
+		b2 = &gene[n * m1 + m1 + m1 * o];
 		snake_init_length = 5;
 		st = 0;
 		en = snake_init_length;
-		maxiters = 3*(M+N);
-		additers = 1*(M+N);
+		maxiters = 3 * (M + N);
+		additers = 1 * (M + N);
 		loops = maxiters;
 		score = 0;
 		fi = 0;
 		snake_motion = 3;
 		dir[0] = 1;
 		dir[1] = 0;
+		snakeIsAlive = 1;
+		foodEaten = 1;
 	}
-    __syncthreads();
-	if(THREAD_ID < snake_init_length) {
-		snake[THREAD_ID][0] = THREAD_ID+init_x;
-		snake[THREAD_ID][1] = 0+init_y; 
-	}
+
 	__syncthreads();
-	// if(THREAD_ID == 0 && BLOCK_ID == 0)
-	DEB(printf("Organism initialized %d\n", blockIdx.x));
-	SEQUENTIAL_START()
+	
+	if(threadIdx.x < snake_init_length) {
+		snake[threadIdx.x][0] = threadIdx.x + init_x;
+		snake[threadIdx.x][1] = init_y; 
+	}
+		
+		if(threadIdx.x == 0) {
 	do
 	{
 		// __syncthreads();
-		// SEQUENTIAL_START()
-		if(foodEaten) {
-			food_pos[0] = foods[2*fi];
-			food_pos[1] = foods[2*fi+1];
-			fi++;
-			foodEaten = false; 
-		}
-
-		DEB(printf("Food pos: %d,%d\n",food_pos[0], food_pos[1]));
-		head[0] = snake[(en-1+Q_LEN)%Q_LEN][0];
-		head[1] = snake[(en-1+Q_LEN)%Q_LEN][1]; 
-		x = head[0];
-		y = head[1];
-		snake_size = (en-st+Q_LEN)%Q_LEN;
-		DEB(printf("head: (%d,%d) | snake size: %d\n", x,y,snake_size));
-		for(int i=0;i < 8; i++) {
-			for(int j = 0; j < 3; j++) {
-				dist[i][j] = 2*max(M, N);
+		// if(threadIdx.x == 0) {
+			if(foodEaten) {
+				food_pos[0] = foods[2 * fi];
+				food_pos[1] = foods[2 * fi + 1];
+				fi++;
+				foodEaten = 0; 
 			}
-		}
-		int k = 0;
-		for(int i=-1;i<=1;i++) {
-			for(int j=-1; j<=1;j++) {
-				if (i == 0 && j == 0 ) {
-					continue;
-				} else if(i == 0) {
-					dist[k][0] = (j > 0) * N - j * y;
-				} else if(j == 0) {
-					dist[k][0] = (i > 0) * M - i * x;
-				} else {
-					dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
-				}
 
-				int u,v;
-				u = food_pos[0] - x;
-				v = food_pos[1] - y;
-				if(check(u,v,i,j)) {
-					if(abs(dist[k][1]) > float(abs(u)+abs(v)) / (abs(i) + abs(j))) {
-						dist[k][1] = float(abs(u)+abs(v)) / (abs(i) + abs(j));
+			head[0] = snake[(en - 1 + Q_LEN) % Q_LEN][0];
+			head[1] = snake[(en - 1 + Q_LEN) % Q_LEN][1]; 
+			x = head[0];
+			y = head[1];
+			snake_size = (en - st + Q_LEN) % Q_LEN;
+			for(int i = 0; i < 8; i++) {
+				for(int j = 0; j < 3; j++) {
+					dist[i][j] = 2 * max(M, N);
+				}
+			}
+			int k = 0;
+			for(int i = -1; i <= 1; i++) {
+				for(int j = -1; j <= 1; j++) {
+					if (i == 0 && j == 0 ) {
+						continue;
+					} else if(i == 0) {
+						dist[k][0] = (j > 0) * N - j * y;
+					} else if(j == 0) {
+						dist[k][0] = (i > 0) * M - i * x;
+					} else {
+						dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
 					}
-				}
 
-				for(int ti=0; ti < snake_size; ti++) {
-					int haha[2];
-					haha[0] = snake[st][0];
-					haha[1] = snake[st][1];
-					// snake.pop();
-					st = (st+1+Q_LEN)%Q_LEN;
-					u = haha[0] - x;
-					v = haha[1] - y;
-					if(check(u,v,i,j)) {
-						if(abs(dist[k][2]) > float(abs(u)+abs(v))/(abs(i)+abs(j))) {
-							dist[k][2] = float(abs(u)+abs(v))/(abs(i)+abs(j));
+					int u, v;
+					u = food_pos[0] - x;
+					v = food_pos[1] - y;
+					if(check(u, v, i, j)) {
+						if(abs(dist[k][1]) > float(abs(u) + abs(v)) / (abs(i) + abs(j))) {
+							dist[k][1] = float(abs(u) + abs(v)) / (abs(i) + abs(j));
 						}
 					}
-					snake[en][0] = haha[0];
-					snake[en][1] = haha[1];
-					en = (en+1+Q_LEN)%Q_LEN;
-					// snake.push(haha);
+
+					for(int ti = 0; ti < snake_size; ti++) {
+						int haha[2];
+						haha[0] = snake[st][0];
+						haha[1] = snake[st][1];
+						// snake.pop();
+						st = (st + 1 + Q_LEN) % Q_LEN;
+						u = haha[0] - x;
+						v = haha[1] - y;
+						if(check(u, v, i, j)) {
+							if(abs(dist[k][2]) > float(abs(u) + abs(v))/(abs(i) + abs(j))) {
+								dist[k][2] = float(abs(u) + abs(v))/(abs(i) + abs(j));
+							}
+						}
+						snake[en][0] = haha[0];
+						snake[en][1] = haha[1];
+						en = (en + 1 + Q_LEN) % Q_LEN;
+						// snake.push(haha);
+					}
+					k++;						
 				}
-				k++;						
 			}
-		}
-		// SEQUENTIAL_END()
-		// if(THREAD_ID < 24) {
-		// 	int i = THREAD_ID / 3;
-		// 	int j = THREAD_ID % 3;
-		// 	dist[i][j] = 2*max(M,N);
+
+			/* dense 1 */
+			for(int i = 0; i < m1; i++) {
+				output1[i] = 0;
+				for(int j = 0; j < n; j++) {
+					output1[i] += W1[j * m1 + i] * input[j];
+				}
+				output1[i] += b1[i];
+			}
+			/* sigmoid */
+			for(int i = 0; i < m1; i++) {
+				output1[i] = 1.0 / (1.0 + expf(-output1[i]));
+			}
+
+			/* dense 2 */
+			for(int i = 0; i < o; i++) {
+				output2[i] = 0;
+				for(int j = 0; j < m1; j++) {
+					output2[i] += W2[j * o + i] * output1[j];
+				}
+				output2[i] += b2[i];
+			}
+
+			/* sigmoid */
+			for(int i = 0; i < m1; i++) {
+				output2[i] = 1.0 / (1.0 + expf(-output2[i]));
+			}
+			float maxm = output2[0];
+			int com = 0;
+			for(int i = 1; i < o; i++) {
+				if (output2[i] > maxm) {
+					maxm = output2[i];
+					com = i;
+				}
+			}	
+
+			if(com == 0) {
+				// no change to direction
+			} else if(com == 1) {
+				if(snake_motion == 1) {
+					// change to west
+					snake_motion = 4;
+					dir[0] = -1;
+					dir[1] = 0;
+				} else if(snake_motion == 2) {
+					// change to east
+					snake_motion = 3;
+					// dir = ii(1, 1.0f);
+					dir[0] = 1;
+					dir[1] = 0;
+				} else if(snake_motion == 3) {
+					// change to north
+					snake_motion = 1;
+					// dir = ii(0, -1);
+					dir[0] = 0;
+					dir[1] = -1;
+				} else if(snake_motion == 4) {
+					// change to south
+					snake_motion = 2;
+					// dir = ii(0, 1);
+					dir[0] = 0;
+					dir[1] = 1;
+				}
+			} else if(com == 2){
+				if(snake_motion == 1) {
+					// change to east
+					snake_motion = 3;
+					// dir = ii(1, 0);
+					dir[0] = 1;
+					dir[1] = 0;
+				} else if(snake_motion == 2) {
+					// change to west
+					snake_motion = 4;
+					// dir = ii(-1, 0);
+					dir[0] = -1;
+					dir[1] = 0;
+				} else if(snake_motion == 3) {
+					// change to south
+					snake_motion = 2;
+					// dir = ii(0, 1);
+					dir[0] = 0;
+					dir[1] = 1;
+				} else if(snake_motion == 4) {
+					// change to north
+					snake_motion = 1;
+					// dir = ii(0, -1);
+					dir[0] = 0;
+					dir[1] = -1;
+				}
+			} else if(com == 3) {
+				snakeIsAlive = 0;
+				// break;
+			}
+			
+			// check if the snake eats the food in the next move
+			// head = ii(head.first + dir.first, head.second + dir.second); 
+			head[0] = head[0] + dir[0];
+			head[1] = head[1] + dir[1];
+			snake[en][0] = head[0];
+			snake[en][1] = head[1];
+			en = (en + 1 + Q_LEN) % Q_LEN;
+
+			// move the snake in the direction
+			if(head[0] != food_pos[0] || head[1] != food_pos[1]) {
+				st = (st + 1 + Q_LEN) % Q_LEN;
+			} else {
+				score += 1;
+				loops += additers;
+				foodEaten = 1;
+			}
+
+			// check if the snake crosses any boundaries
+			x = head[0];
+			y = head[1];
+			if(x < 0 || y < 0 || x >= M || y >= N) {
+				// crossed the boundart game over
+				snakeIsAlive = 0;
+				// break;
+			}
+
+			// check if the snake eats it self
+			snake_size = (en - st + Q_LEN) % Q_LEN;
+			for(int i = 0; i < snake_size; i++) {
+				int haha[2];
+				haha[0] = snake[st][0];
+				haha[1] = snake[st][1];
+				// snake.pop();
+				st = (st + 1 + Q_LEN) % Q_LEN;
+				if(i < snake_size - 1 && haha[0] == x && haha[1] == y) {
+					snakeIsAlive = 0;
+					break;
+				}    
+				snake[en][0] = haha[0];
+				snake[en][1] = haha[1];
+				en = (en + 1 + Q_LEN) % Q_LEN;        
+				// snake.push(haha);
+			}
+			
+			if(!snakeIsAlive) {
+				//snake is not alive
+				// break;
+			}
+			
+			loops--;
 		// }
 		// __syncthreads();
-
-		// if(THREAD_ID < 9 && THREAD_ID != 4) {
-		// 	int i = THREAD_ID/3 - 1;
-		// 	int j = THREAD_ID%3 - 1;
-		// 	int k = THREAD_ID - 1;
-		// 	if(i == 0) {
-		// 		dist[k][0] = (j > 0) * N - j * y;
-		// 	} else if(j == 0) {
-		// 		dist[k][0] = (i > 0) * M - i * x;
-		// 	} else {
-		// 		dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
-		// 	}
-
-		// 	int u,v;
-		// 	u = food_pos[0] - x;
-		// 	v = food_pos[1] - y;
-		// 	if(check(u,v,i,j)) {
-		// 		if(abs(dist[k][1]) > float(abs(u)+abs(v)) / (abs(i) + abs(j))) {
-		// 			dist[k][1] = float(abs(u)+abs(v)) / (abs(i) + abs(j));
-		// 		}
-		// 	}
-
-		// 	for(int ti=0; ti < snake_size; ti++) {
-		// 		int haha[2];
-		// 		haha[0] = snake[st][0];
-		// 		haha[1] = snake[st][1];
-		// 		st = (st+1+Q_LEN)%Q_LEN;
-		// 		u = haha[0] - x;
-		// 		v = haha[1] - y;
-		// 		if(check(u,v,i,j)) {
-		// 			if(abs(dist[k][2]) > float(abs(u)+abs(v))/(abs(i)+abs(j))) {
-		// 				dist[k][2] = float(abs(u)+abs(v))/(abs(i)+abs(j));
-		// 			}
-		// 		}
-		// 		snake[en][0] = haha[0];
-		// 		snake[en][1] = haha[1];
-		// 		en = (en+1+Q_LEN)%Q_LEN;
-		// 	}
-		// }
-		// __syncthreads();
-		// SEQUENTIAL_START()
-		/** 
-		* Neural network evaluation
-		*
-		*/
-
-		/* dense 1 */
-		for(int i=0; i < m1; i++) {
-			output1[i] = 0;
-			for(int j = 0; j < n; j++) {
-				output1[i] += W1[j * m1 + i] * input[j];
-			}
-			output1[i] += b1[i];
+	} while(snakeIsAlive && loops >= 0 && fi < NUM_FOODS);
 		}
-		/* sigmoid */
-		for(int i = 0; i < m1; i++) {
-			output1[i] = 1.0 / (1.0 + expf(-output1[i]));
-		}
-
-		/* dense 2 */
-		for(int i=0; i < o; i++) {
-			output2[i] = 0;
-			for(int j = 0; j < m1; j++) {
-				output2[i] += W2[j * o + i] * output1[j];
-			}
-			output2[i] += b2[i];
-		}
-
-		/* sigmoid */
-		for(int i = 0; i < m1; i++) {
-			output2[i] = 1.0 / (1.0 + expf(-output2[i]));
-		}
-		float maxm = output2[0];
-		int com = 0;
-		for(int i = 1; i < o; i++) {
-			if (output2[i] > maxm) {
-				maxm = output2[i];
-				com = i;
-			}
-		}	
-
-		if(com == 0) {
-			// no change to direction
-		}
-		else if(com == 1) {
-			if(snake_motion == 1) {
-				// change to west
-				snake_motion = 4;
-				dir[0] = -1;
-				dir[1] = 0;
-			}
-			else if(snake_motion == 2) {
-				// change to east
-				snake_motion = 3;
-				// dir = ii(1,0);
-				dir[0] = 1;
-				dir[1] = 0;
-			}
-			else if(snake_motion == 3) {
-				// change to north
-				snake_motion = 1;
-				// dir = ii(0,-1);
-				dir[0] = 0;
-				dir[1] = -1;
-			}
-			else if(snake_motion == 4) {
-				// change to south
-				snake_motion = 2;
-				// dir = ii(0,1);
-				dir[0] = 0;
-				dir[1] = 1;
-			}
-		}
-		else if(com == 2){
-			if(snake_motion == 1) {
-				// change to east
-				snake_motion = 3;
-				// dir = ii(1,0);
-				dir[0] = 1;
-				dir[1] = 0;
-			}
-			else if(snake_motion == 2) {
-				// change to west
-				snake_motion = 4;
-				// dir = ii(-1,0);
-				dir[0] = -1;
-				dir[1] = 0;
-			}
-			else if(snake_motion == 3) {
-				// change to south
-				snake_motion = 2;
-				// dir = ii(0,1);
-				dir[0] = 0;
-				dir[1] = 1;
-			}
-			else if(snake_motion == 4) {
-				// change to north
-				snake_motion = 1;
-				// dir = ii(0,-1);
-				dir[0] = 0;
-				dir[1] = -1;
-			}
-		}
-		else if(com == 3) {
-			snakeIsAlive = false;
-			DEB(printf("com is 3, game over"));
-			break;
-		}
-		
-		// check if the snake eats the food in the next move
-		// head = ii(head.first+dir.first, head.second+dir.second); 
-		head[0] = head[0]+dir[0];
-		head[1] = head[1]+dir[1];
-		snake[en][0] = head[0];
-		snake[en][1] = head[1];
-		en = (en+1+Q_LEN)%Q_LEN;
-
-		// move the snake in the direction
-		if(head[0] != food_pos[0] || head[1] != food_pos[1]) {
-			st = (st+1+Q_LEN)%Q_LEN;
-
-		}
-		else {
-			score += 1;
-			loops += additers;
-			foodEaten = true;
-		}
-
-
-		// check if the snake crosses any boundaries
-		x = head[0];
-		y = head[1];
-		DEB(printf("Head now: %d,%d",x,y));
-		if(x<0||y<0||x>=M||y>=N) {
-			// crossed the boundart game over
-			snakeIsAlive = false;
-			DEB(printf("snake crossed the boundary\n"));
-			break;
-		}
-
-		// check if the snake eats it self
-		snake_size = (en-st+Q_LEN)%Q_LEN;
-		for(int i=0; i < snake_size; i++) {
-			int haha[2];
-			haha[0] = snake[st][0];
-			haha[1] = snake[st][1];
-			// snake.pop();
-			st = (st+1+Q_LEN)%Q_LEN;
-			if(i < snake_size-1 && haha[0] == x && haha[1] == y) {
-				snakeIsAlive = false;
-				break;
-			}    
-			snake[en][0] = haha[0];
-			snake[en][1] = haha[1];
-			en = (en+1+Q_LEN)%Q_LEN;        
-			// snake.push(haha);
-		}
-		if(!snakeIsAlive) {
-			//snake is not alive
-			break;
-		}
-		// SEQUENTIAL_END()
-	} while(snakeIsAlive && loops-- && fi < NUM_FOODS);
 	
-	// __syncthreads();
-	// SEQUENTIAL_START()
-	fitness_score[blockIdx.x] = score;
-	DEB(printf("%d\n",score));
-	// SEQUENTIAL_END()
-	SEQUENTIAL_END()
+	__syncthreads();
+
+	if(threadIdx.x == 0) {
+		fitness_score[blockIdx.x] = score;
+	}
 }
 
 // Function to select the best (selection_cutoff)% of the population in each generation where the organisms are sorted in the decreasing of the fitness scores.
@@ -484,61 +413,53 @@ void mutate(float *rand1, float *rand2, float *d_organism, const float mutation_
 __global__ 
 void scale(float* mat, float a, float b) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	mat[idx] = (mat[idx]-0.5)*(b-a) + (b+a)/2.;
+	mat[idx] = (mat[idx] - 0.5) * (b - a) + (b + a) / 2.0;
 }
 
-int main() 
-{
-    int blocks, threads;
-	cout << tempo << endl;
+int main() {
 	srand(time(NULL));
 
     GENOME_LENGTH = n * m1 + m1 + m1 * o + o;
-    const size_t size1 = sizeof(float) * POPULATION_SIZE * GENOME_LENGTH;
-    organism = (float *) malloc(size1);
-    blocks = 4096;
-    threads = GENOME_LENGTH;
-	int L = POPULATION_SIZE*GENOME_LENGTH;
+	
+	printf("Genome length: %d\n", GENOME_LENGTH);
+	printf("Generation size: %d\n", POPULATION_SIZE);
+
+	const int L = POPULATION_SIZE * GENOME_LENGTH;
+	const size_t data_size = sizeof(float) * POPULATION_SIZE * GENOME_LENGTH;
+	
+	organism = (float *) malloc(data_size);
+	
+	int blocks = 4096;
+    int threads = GENOME_LENGTH;
+	
 	float* d_organism;
-	cout << "Allocating memory " << size1 << endl;
-	/**
-	* Create Genomes by uniform initialization of organism matrix for range -1,1
-	*/
-	CUDA_CALL(cudaMalloc((void**)&d_organism, size1));
+
+	/* Allocate memory for organisms on device */
+	cudaMalloc((void**) &d_organism, data_size);
 	cudaErrorTrace();
+
 	curandGenerator_t prng;
 	
 	/* Create pseudo random number generator */
-	CURAND_CALL(curandCreateGenerator(&prng, CURAND_RNG_PSEUDO_MT19937));
+	curandCreateGenerator(&prng, CURAND_RNG_PSEUDO_MT19937);
 	cudaErrorTrace();
+
 	/* Set seed */
-	CURAND_CALL(curandSetPseudoRandomGeneratorSeed(prng, 42ULL));
+	curandSetPseudoRandomGeneratorSeed(prng, 42ULL);
 	cudaErrorTrace();
-	/*Generate L floats on device */
-	CURAND_CALL(curandGenerateUniform(prng, d_organism, L));
+	
+	/** 
+	* Create genomes by uniform initialization of organism matrix
+	*/
+	curandGenerateUniform(prng, d_organism, L);
 	cudaErrorTrace();	
-	/* adjust the range of uniform value to (-1,1] */
-	scale<<<blocks, threads>>>(d_organism, -1., 1.);
+	
+	/* adjust the range of uniform value to (-1, 1] */
+	scale<<<blocks, threads>>>(d_organism, -1.0, 1.0);
 
 	/* Copy device memory to host */
-	CUDA_CALL(cudaMemcpy(organism, d_organism, size1, cudaMemcpyDeviceToHost));
+	cudaMemcpy(organism, d_organism, data_size, cudaMemcpyDeviceToHost);
 	cudaErrorTrace();
-	cout << "Genomes created" << endl;
-	// return 0;
-	double mu = 0;
-	double sigma = 0;
-	cout  << "Finding the mean and sigma" << endl;
-	for(int i=0;i < L; i++) {
-		mu += *(organism+i);
-	}
-	mu = mu / L;
-	for(int i=0; i < L; i++) {
-		sigma += pow((*(organism+i)-mu),2);
-	}
-	sigma /= L;
-	printf("mean: %lf | sigma: %lf\n", mu, sigma);
-	printf("Genome length: %d\n", GENOME_LENGTH);
-	printf("Generation size: %d\n", POPULATION_SIZE);
 
 	max_score = 0;
 
@@ -547,40 +468,46 @@ int main()
 	fprintf(fout, "NUM_GENERATIONS = %d\n", NUM_GENERATIONS);
 	fprintf(fout, "POPULATION_SIZE = %d\n", POPULATION_SIZE);
 	fprintf(fout, "GENOME_LENGTH = %d\n", GENOME_LENGTH);
-	// int* h_fitness_score;
-	int* d_fitness_score;
-	cout << "Fitness memory saved" << endl;
-	fitness_score = (int*)malloc(sizeof(int)*POPULATION_SIZE);
-	cout << "ADFA" << endl;
-	/* Allocate memory for fitness score on device */
-	CUDA_CALL(cudaMalloc((void**)&d_fitness_score, sizeof(int)*POPULATION_SIZE));
-	cudaErrorTrace();
-	int *h_foods, *d_foods;
-	const size_t food_size = sizeof(int) * 2 * NUM_FOODS;
-	h_foods = (int*)malloc(food_size);
-	cudaMalloc((void**)&d_foods, food_size);
-	cudaErrorTrace();
-	cout << "Starting training" << endl;
 
-	unsigned int *random_numbers[2];
-	float *random_numbers1[2];
+	int* d_fitness_score;
+
+	/* Allocate memory for fitness score on host */
+	fitness_score = (int*) malloc(sizeof(int) * POPULATION_SIZE);
+
+	/* Allocate memory for fitness score on device */
+	cudaMalloc((void**) &d_fitness_score, sizeof(int) * POPULATION_SIZE);
+	cudaErrorTrace();
 	
-	cudaMalloc((void**)&random_numbers[0], sizeof(int) * 2 * POPULATION_SIZE);
-	cudaMalloc((void**)&random_numbers[1], sizeof(int) * POPULATION_SIZE);
-	cudaMalloc((void**)&random_numbers1[0], size1);
-	cudaMalloc((void**)&random_numbers1[1], size1);
+	const size_t food_size = sizeof(int) * 2 * NUM_FOODS;
+	
+	int *h_foods, *d_foods;
+	
+	h_foods = (int*) malloc(food_size);
+	cudaMalloc((void**) &d_foods, food_size);
+	cudaErrorTrace();
+	
+	unsigned int *random_uints[2];
+	float *random_floats[2];
+	
+	cudaMalloc((void**) &random_uints[0], sizeof(int) * 2 * POPULATION_SIZE);
+	cudaMalloc((void**) &random_uints[1], sizeof(int) * POPULATION_SIZE);
+	cudaMalloc((void**) &random_floats[0], sizeof(int) * POPULATION_SIZE * GENOME_LENGTH);
+	cudaMalloc((void**) &random_floats[1], sizeof(int) * POPULATION_SIZE * GENOME_LENGTH);
 
 	for(int i = 0; i < NUM_GENERATIONS; i++) {
 		int local_max = -1, local_best;
 
 		for(int k = 0; k < NUM_FOODS; k++) {
-			h_foods[2*k] = rand() % M;
-			h_foods[2*k+1] = rand() % N;
+			h_foods[2 * k] = rand() % M;
+			h_foods[2 * k + 1] = rand() % N;
 		}
+
+		/* Copy food positions from host to device */
 		cudaMemcpy(d_foods, h_foods, food_size, cudaMemcpyHostToDevice);
 		cudaErrorTrace();
+		
 		/* Copy host organism to device */
-		cudaMemcpy(d_organism, organism, size1, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_organism, organism, data_size, cudaMemcpyHostToDevice);
 		
 		/**
 		Logic:
@@ -590,14 +517,10 @@ int main()
 		*/
 		blocks = POPULATION_SIZE;
 		threads = 128;
-		cout << "Starting evaluation" << endl;
-		evaluate<<<blocks, threads, sizeof(float)*GENOME_LENGTH>>>(d_organism, d_foods, d_fitness_score, GENOME_LENGTH);
-		cudaDeviceSynchronize();
-		cudaErrorTrace();
 
-		cout << "Evaluation completed" << endl;
+		evaluate<<<blocks, threads, sizeof(float) * GENOME_LENGTH>>>(d_organism, d_foods, d_fitness_score, GENOME_LENGTH);
 
-		cudaMemcpy(fitness_score, d_fitness_score, sizeof(int)*POPULATION_SIZE, cudaMemcpyDeviceToHost);
+		cudaMemcpy(fitness_score, d_fitness_score, sizeof(int) * POPULATION_SIZE, cudaMemcpyDeviceToHost);
 		cudaErrorTrace();
 		
 		for(int j = 0; j < POPULATION_SIZE; j++) {
@@ -622,25 +545,28 @@ int main()
 
 		int selected = selection(0.15);
 
-		cudaMemcpy(d_organism, organism, size1, cudaMemcpyHostToDevice);		
+		cudaMemcpy(d_organism, organism, data_size, cudaMemcpyHostToDevice);		
 		
-		curandGenerate(prng, random_numbers[0], 2 * POPULATION_SIZE);
-		curandGenerate(prng, random_numbers[1], POPULATION_SIZE);		
+		curandGenerate(prng, random_uints[0], 2 * POPULATION_SIZE);
+		curandGenerate(prng, random_uints[1], POPULATION_SIZE);		
 		
-		crossover<<<POPULATION_SIZE - selected, GENOME_LENGTH>>>(random_numbers[0], random_numbers[1], d_organism, selected);
+		crossover<<<POPULATION_SIZE - selected, GENOME_LENGTH>>>(random_uints[0], random_uints[1], d_organism, selected);
 
-		curandGenerateUniform(prng, random_numbers1[0], POPULATION_SIZE * GENOME_LENGTH);
-		curandGenerateNormal(prng, random_numbers1[1], POPULATION_SIZE * GENOME_LENGTH, 0.0, 1.0);
+		curandGenerateUniform(prng, random_floats[0], POPULATION_SIZE * GENOME_LENGTH);
+		curandGenerateNormal(prng, random_floats[1], POPULATION_SIZE * GENOME_LENGTH, 0.0, 1.0);
 		
-		mutate<<<ga_blocks, ga_threads>>>(random_numbers1[0], random_numbers1[1], d_organism, 1e-2);
+		mutate<<<ga_blocks, ga_threads>>>(random_floats[0], random_floats[1], d_organism, 1e-2);
 
-		cudaMemcpy(organism, d_organism, size1, cudaMemcpyDeviceToHost);
+		cudaMemcpy(organism, d_organism, data_size, cudaMemcpyDeviceToHost);
 	}
 
-	cudaFree(random_numbers[0]);
-	cudaFree(random_numbers[1]);
-	cudaFree(random_numbers1[0]);
-	cudaFree(random_numbers1[1]);
+	cudaFree(d_organism);
+	cudaFree(d_fitness_score);
+	cudaFree(d_foods);
+	cudaFree(random_uints[0]);
+	cudaFree(random_uints[1]);
+	cudaFree(random_floats[0]);
+	cudaFree(random_floats[1]);
 
 	free(organism);
 
