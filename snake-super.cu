@@ -55,17 +55,11 @@ int *fitness_score = NULL, max_score;
 __device__
 bool check(int u, int v, int i, int j) {
 	if(u == 0 && v != 0) {
-		if(i == u && j == v / abs(v)) {
-			return true;
-		}
+		return i == 0 && j == v / abs(v);
 	} else if(u != 0 && v == 0) {
-		if(i == u / abs(u) && j == v) {
-			return true;
-		}
+		return i == u / abs(u) && j == 0;
 	} else if(u != 0 && v != 0) {
-		if(i == u / abs(u) && j == v / abs(v)) {
-			return true;
-		}
+		return i == u / abs(u) && j == v / abs(v);
 	}
 	return false;
 }
@@ -107,7 +101,9 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		gene[i] = genes[blockIdx.x * GENOME_LENGTH + i];
 		i += blockDim.x;
 	}
+
 	__syncthreads();
+	
 	int init_x = M / 2;
 	int init_y = N / 2;
 
@@ -130,12 +126,11 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 	snakeIsAlive = 1;
 	foodEaten = 1;
 
-	__syncthreads();
 	for(int i = 0; i < snake_init_length; i++) {
 		snake[i][0] = i + init_x;
 		snake[i][1] = init_y;
 	}
-	__syncthreads();
+
 	do
 	{
 		if(foodEaten) {
@@ -150,17 +145,20 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		x = head[0];
 		y = head[1];
 		snake_size = (en - st + Q_LEN) % Q_LEN;
-		__syncthreads();
+
 		if(threadIdx.x < 24) {
 			int i = threadIdx.x / 3;
 			int j = threadIdx.x % 3;
 			dist[i][j] = 2 * (M+N);
 		}
+
 		__syncthreads();
+
 		if (threadIdx.x < 9 && threadIdx.x != 4) {
 			int i = threadIdx.x / 3 - 1;
 			int j = threadIdx.x % 3 - 1;
 			int k = (threadIdx.x > 4) ? (threadIdx.x - 1) : threadIdx.x;
+			
 			if(i == 0) {
 				dist[k][0] = (j > 0) * N - j * y;
 			} else if(j == 0) {
@@ -178,6 +176,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 				}
 			}
 
+			// TODO
 			for(int ti = 0; ti < snake_size; ti++) {
 				int haha[2];
 				haha[0] = snake[st][0];
@@ -197,33 +196,39 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 				// snake.push(haha);
 			}
 		}
+
 		__syncthreads();
+		
 		if(threadIdx.x < m1) {
 			int i = threadIdx.x;
 			/* dense 1 */
-			output1[i] = 0;
+			int res = 0;
 			for(int j = 0; j < n; j++) {
-				output1[i] += W1[j * m1 + i] * input[j];
+				res += W1[j * m1 + i] * input[j];
 			}
-			output1[i] += b1[i];
+			res += b1[i];
 			/* sigmoid */
 		
-			output1[i] = 1.0 / (1.0 + expf(-output1[i]));
+			output1[i] = 1.0 / (1.0 + expf(-res));
 		}
+		
 		__syncthreads();
+		
 		if (threadIdx.x < o) {
 			int i = threadIdx.x;
 			/* dense 2 */
-			output2[i] = 0;
+			int res = 0;
 			for(int j = 0; j < m1; j++) {
-				output2[i] += W2[j * o + i] * output1[j];
+				res += W2[j * o + i] * output1[j];
 			}
-			output2[i] += b2[i];
+			res += b2[i];
 
 			/* sigmoid */
-			output2[i] = 1.0 / (1.0 + expf(-output2[i]));
+			output2[i] = 1.0 / (1.0 + expf(-res));
 		}
+
 		__syncthreads();
+		
 		if(threadIdx.x == 0) {
 			float maxm = output2[0];
 			com = 0;
@@ -234,10 +239,10 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 				}
 			}	
 		}
+		
 		__syncthreads();
-		if(com == 0) {
-			// no change to direction
-		} else if(com == 1) {
+		
+		if(com == 1) {
 			if(snake_motion == 1) {
 				// change to west
 				snake_motion = 4;
@@ -319,6 +324,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 			// break;
 		}
 
+		// TODO
 		// check if the snake eats it self
 		snake_size = (en - st + Q_LEN) % Q_LEN;
 		for(int i = 0; i < snake_size; i++) {
@@ -335,7 +341,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 			snake[en][1] = haha[1];
 			en = (en + 1 + Q_LEN) % Q_LEN;        
 			// snake.push(haha);
-		}			
+		}		
 		loops--;
 	} while(snakeIsAlive && loops >= 0 && fi < NUM_FOODS);
 	
@@ -427,7 +433,7 @@ int main() {
 	cudaErrorTrace();	
 	
 	/* adjust the range of uniform value to (-1, 1] */
-	scale<<<blocks, threads>>>(d_organism, -1.0, 1.0);
+	scale<<<POPULATION_SIZE, GENOME_LENGTH>>>(d_organism, -1.0, 1.0);
 
 	max_score = 0;
 
