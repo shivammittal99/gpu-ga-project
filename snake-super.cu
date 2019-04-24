@@ -1,4 +1,4 @@
-%%cuda --name snake-super.cu
+// %%cuda --name snake-super.cu
 /*	CS6023 GPU Programming
  	Project - Genetic Algorithm to optimise snakes game
  		Done By, 
@@ -70,31 +70,32 @@ bool check(int u, int v, int i, int j) {
 
 __global__
 void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
-	__shared__ int food_pos[2];
-	__shared__ int snake[Q_LEN][2];
-	__shared__ int snake_init_length;
-	__shared__ int st;
-	__shared__ int en;
-	__shared__ int maxiters;
-	__shared__ int additers;
-	__shared__ int loops;
-	__shared__ int snake_motion;
-	__shared__ int dir[2];
-	__shared__ int score;
-	__shared__ int fi;
-	__shared__ float dist[8][3];
-	__shared__ float* input;
-	__shared__ float* W1;
-	__shared__ float* b1;
-	__shared__ float* W2;
-	__shared__ float* b2;
+	int food_pos[2];
+	int snake[Q_LEN][2];
+	int snake_init_length;
+	int st;
+	int en;
+	int maxiters;
+	int additers;
+	int loops;
+	int snake_motion;
+	int dir[2];
+	int score;
+	int fi;
+	float dist[8][3];
+	float* input;
+	float* W1;
+	float* b1;
+	float* W2;
+	float* b2;
 	__shared__ float output1[m1];
 	__shared__ float output2[o];
-	__shared__ int head[2];
-	__shared__ int snake_size;
-	__shared__ int x, y;
-	__shared__ int snakeIsAlive;
-	__shared__ int foodEaten;
+	__shared__ int com;
+	int head[2];
+	int snake_size;
+	int x, y;
+	int snakeIsAlive;
+	int foodEaten;
 	
 	extern __shared__ float gene[];
 
@@ -104,11 +105,11 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 		gene[i] = genes[blockIdx.x * GENOME_LENGTH + i];
 		i += blockDim.x;
 	}
-
+	__syncthreads();
 	int init_x = M / 2;
 	int init_y = N / 2;
 
-	if(threadIdx.x == 0) {
+	// if(threadIdx.x == 0) {
 		input = &dist[0][0];
 		W1 = &gene[0];
 		b1 = &gene[n * m1];
@@ -127,228 +128,225 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 		dir[1] = 0;
 		snakeIsAlive = 1;
 		foodEaten = 1;
-	}
+	// }
 
 	__syncthreads();
-	
-	if(threadIdx.x < snake_init_length) {
-		snake[threadIdx.x][0] = threadIdx.x + init_x;
-		snake[threadIdx.x][1] = init_y; 
-	}
-		
-		if(threadIdx.x == 0) {
+	// if(threadIdx.x == 0) {
+		for(int i = 0; i < snake_init_length; i++) {
+			snake[i][0] = i + init_x;
+			snake[i][1] = init_y;
+		}
+	// }	
+	// if(threadIdx.x < snake_init_length) {
+	// 	snake[threadIdx.x][0] = threadIdx.x + init_x;
+	// 	snake[threadIdx.x][1] = init_y; 
+	// }
+	__syncthreads();
+		// if(threadIdx.x == 0) {
 	do
 	{
-		// __syncthreads();
-		// if(threadIdx.x == 0) {
-			if(foodEaten) {
-				food_pos[0] = foods[2 * fi];
-				food_pos[1] = foods[2 * fi + 1];
-				fi++;
-				foodEaten = 0; 
-			}
+		if(foodEaten) {
+			food_pos[0] = foods[2 * fi];
+			food_pos[1] = foods[2 * fi + 1];
+			fi++;
+			foodEaten = 0; 
+		}
 
-			head[0] = snake[(en - 1 + Q_LEN) % Q_LEN][0];
-			head[1] = snake[(en - 1 + Q_LEN) % Q_LEN][1]; 
-			x = head[0];
-			y = head[1];
-			snake_size = (en - st + Q_LEN) % Q_LEN;
-			for(int i = 0; i < 8; i++) {
-				for(int j = 0; j < 3; j++) {
-					dist[i][j] = 2 * max(M, N);
+		head[0] = snake[(en - 1 + Q_LEN) % Q_LEN][0];
+		head[1] = snake[(en - 1 + Q_LEN) % Q_LEN][1]; 
+		x = head[0];
+		y = head[1];
+		snake_size = (en - st + Q_LEN) % Q_LEN;
+		for(int i = 0; i < 8; i++) {
+			for(int j = 0; j < 3; j++) {
+				dist[i][j] = 2 * max(M, N);
+			}
+		}
+		__syncthreads();
+		int k = 0;
+		for(int i = -1; i <= 1; i++) {
+			for(int j = -1; j <= 1; j++) {
+				if (i == 0 && j == 0 ) {
+					continue;
+				} else if(i == 0) {
+					dist[k][0] = (j > 0) * N - j * y;
+				} else if(j == 0) {
+					dist[k][0] = (i > 0) * M - i * x;
+				} else {
+					dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
 				}
-			}
-			int k = 0;
-			for(int i = -1; i <= 1; i++) {
-				for(int j = -1; j <= 1; j++) {
-					if (i == 0 && j == 0 ) {
-						continue;
-					} else if(i == 0) {
-						dist[k][0] = (j > 0) * N - j * y;
-					} else if(j == 0) {
-						dist[k][0] = (i > 0) * M - i * x;
-					} else {
-						dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
-					}
 
-					int u, v;
-					u = food_pos[0] - x;
-					v = food_pos[1] - y;
+				int u, v;
+				u = food_pos[0] - x;
+				v = food_pos[1] - y;
+				if(check(u, v, i, j)) {
+					if(abs(dist[k][1]) > float(abs(u) + abs(v)) / (abs(i) + abs(j))) {
+						dist[k][1] = float(abs(u) + abs(v)) / (abs(i) + abs(j));
+					}
+				}
+
+				for(int ti = 0; ti < snake_size; ti++) {
+					int haha[2];
+					haha[0] = snake[st][0];
+					haha[1] = snake[st][1];
+					// snake.pop();
+					st = (st + 1 + Q_LEN) % Q_LEN;
+					u = haha[0] - x;
+					v = haha[1] - y;
 					if(check(u, v, i, j)) {
-						if(abs(dist[k][1]) > float(abs(u) + abs(v)) / (abs(i) + abs(j))) {
-							dist[k][1] = float(abs(u) + abs(v)) / (abs(i) + abs(j));
+						if(abs(dist[k][2]) > float(abs(u) + abs(v))/(abs(i) + abs(j))) {
+							dist[k][2] = float(abs(u) + abs(v))/(abs(i) + abs(j));
 						}
 					}
-
-					for(int ti = 0; ti < snake_size; ti++) {
-						int haha[2];
-						haha[0] = snake[st][0];
-						haha[1] = snake[st][1];
-						// snake.pop();
-						st = (st + 1 + Q_LEN) % Q_LEN;
-						u = haha[0] - x;
-						v = haha[1] - y;
-						if(check(u, v, i, j)) {
-							if(abs(dist[k][2]) > float(abs(u) + abs(v))/(abs(i) + abs(j))) {
-								dist[k][2] = float(abs(u) + abs(v))/(abs(i) + abs(j));
-							}
-						}
-						snake[en][0] = haha[0];
-						snake[en][1] = haha[1];
-						en = (en + 1 + Q_LEN) % Q_LEN;
-						// snake.push(haha);
-					}
-					k++;						
+					snake[en][0] = haha[0];
+					snake[en][1] = haha[1];
+					en = (en + 1 + Q_LEN) % Q_LEN;
+					// snake.push(haha);
 				}
+				k++;						
 			}
-
+		}
+		__syncthreads();
+		if(threadIdx.x < m1) {
+			int i = threadIdx.x;
 			/* dense 1 */
-			for(int i = 0; i < m1; i++) {
-				output1[i] = 0;
-				for(int j = 0; j < n; j++) {
-					output1[i] += W1[j * m1 + i] * input[j];
-				}
-				output1[i] += b1[i];
+			output1[i] = 0;
+			for(int j = 0; j < n; j++) {
+				output1[i] += W1[j * m1 + i] * input[j];
 			}
+			output1[i] += b1[i];
 			/* sigmoid */
-			for(int i = 0; i < m1; i++) {
-				output1[i] = 1.0 / (1.0 + expf(-output1[i]));
-			}
-
+		
+			output1[i] = 1.0 / (1.0 + expf(-output1[i]));
+		}
+		__syncthreads();
+		if (threadIdx.x < o) {
+			int i = threadIdx.x;
 			/* dense 2 */
-			for(int i = 0; i < o; i++) {
-				output2[i] = 0;
-				for(int j = 0; j < m1; j++) {
-					output2[i] += W2[j * o + i] * output1[j];
-				}
-				output2[i] += b2[i];
+			output2[i] = 0;
+			for(int j = 0; j < m1; j++) {
+				output2[i] += W2[j * o + i] * output1[j];
 			}
+			output2[i] += b2[i];
 
 			/* sigmoid */
-			for(int i = 0; i < m1; i++) {
-				output2[i] = 1.0 / (1.0 + expf(-output2[i]));
-			}
+			output2[i] = 1.0 / (1.0 + expf(-output2[i]));
+		}
+		__syncthreads();
+		if(threadIdx.x == 0) {
 			float maxm = output2[0];
-			int com = 0;
+			com = 0;
 			for(int i = 1; i < o; i++) {
 				if (output2[i] > maxm) {
 					maxm = output2[i];
 					com = i;
 				}
 			}	
-
-			if(com == 0) {
-				// no change to direction
-			} else if(com == 1) {
-				if(snake_motion == 1) {
-					// change to west
-					snake_motion = 4;
-					dir[0] = -1;
-					dir[1] = 0;
-				} else if(snake_motion == 2) {
-					// change to east
-					snake_motion = 3;
-					// dir = ii(1, 1.0f);
-					dir[0] = 1;
-					dir[1] = 0;
-				} else if(snake_motion == 3) {
-					// change to north
-					snake_motion = 1;
-					// dir = ii(0, -1);
-					dir[0] = 0;
-					dir[1] = -1;
-				} else if(snake_motion == 4) {
-					// change to south
-					snake_motion = 2;
-					// dir = ii(0, 1);
-					dir[0] = 0;
-					dir[1] = 1;
-				}
-			} else if(com == 2){
-				if(snake_motion == 1) {
-					// change to east
-					snake_motion = 3;
-					// dir = ii(1, 0);
-					dir[0] = 1;
-					dir[1] = 0;
-				} else if(snake_motion == 2) {
-					// change to west
-					snake_motion = 4;
-					// dir = ii(-1, 0);
-					dir[0] = -1;
-					dir[1] = 0;
-				} else if(snake_motion == 3) {
-					// change to south
-					snake_motion = 2;
-					// dir = ii(0, 1);
-					dir[0] = 0;
-					dir[1] = 1;
-				} else if(snake_motion == 4) {
-					// change to north
-					snake_motion = 1;
-					// dir = ii(0, -1);
-					dir[0] = 0;
-					dir[1] = -1;
-				}
-			} else if(com == 3) {
-				snakeIsAlive = 0;
-				// break;
-			}
-			
-			// check if the snake eats the food in the next move
-			// head = ii(head.first + dir.first, head.second + dir.second); 
-			head[0] = head[0] + dir[0];
-			head[1] = head[1] + dir[1];
-			snake[en][0] = head[0];
-			snake[en][1] = head[1];
-			en = (en + 1 + Q_LEN) % Q_LEN;
-
-			// move the snake in the direction
-			if(head[0] != food_pos[0] || head[1] != food_pos[1]) {
-				st = (st + 1 + Q_LEN) % Q_LEN;
-			} else {
-				score += 1;
-				loops += additers;
-				foodEaten = 1;
-			}
-
-			// check if the snake crosses any boundaries
-			x = head[0];
-			y = head[1];
-			if(x < 0 || y < 0 || x >= M || y >= N) {
-				// crossed the boundart game over
-				snakeIsAlive = 0;
-				// break;
-			}
-
-			// check if the snake eats it self
-			snake_size = (en - st + Q_LEN) % Q_LEN;
-			for(int i = 0; i < snake_size; i++) {
-				int haha[2];
-				haha[0] = snake[st][0];
-				haha[1] = snake[st][1];
-				// snake.pop();
-				st = (st + 1 + Q_LEN) % Q_LEN;
-				if(i < snake_size - 1 && haha[0] == x && haha[1] == y) {
-					snakeIsAlive = 0;
-					break;
-				}    
-				snake[en][0] = haha[0];
-				snake[en][1] = haha[1];
-				en = (en + 1 + Q_LEN) % Q_LEN;        
-				// snake.push(haha);
-			}
-			
-			if(!snakeIsAlive) {
-				//snake is not alive
-				// break;
-			}
-			
-			loops--;
-		// }
-		// __syncthreads();
-	} while(snakeIsAlive && loops >= 0 && fi < NUM_FOODS);
 		}
+		__syncthreads();
+		if(com == 0) {
+			// no change to direction
+		} else if(com == 1) {
+			if(snake_motion == 1) {
+				// change to west
+				snake_motion = 4;
+				dir[0] = -1;
+				dir[1] = 0;
+			} else if(snake_motion == 2) {
+				// change to east
+				snake_motion = 3;
+				// dir = ii(1, 1.0f);
+				dir[0] = 1;
+				dir[1] = 0;
+			} else if(snake_motion == 3) {
+				// change to north
+				snake_motion = 1;
+				// dir = ii(0, -1);
+				dir[0] = 0;
+				dir[1] = -1;
+			} else if(snake_motion == 4) {
+				// change to south
+				snake_motion = 2;
+				// dir = ii(0, 1);
+				dir[0] = 0;
+				dir[1] = 1;
+			}
+		} else if(com == 2){
+			if(snake_motion == 1) {
+				// change to east
+				snake_motion = 3;
+				// dir = ii(1, 0);
+				dir[0] = 1;
+				dir[1] = 0;
+			} else if(snake_motion == 2) {
+				// change to west
+				snake_motion = 4;
+				// dir = ii(-1, 0);
+				dir[0] = -1;
+				dir[1] = 0;
+			} else if(snake_motion == 3) {
+				// change to south
+				snake_motion = 2;
+				// dir = ii(0, 1);
+				dir[0] = 0;
+				dir[1] = 1;
+			} else if(snake_motion == 4) {
+				// change to north
+				snake_motion = 1;
+				// dir = ii(0, -1);
+				dir[0] = 0;
+				dir[1] = -1;
+			}
+		} else if(com == 3) {
+			snakeIsAlive = 0;
+			// break;
+		}
+		
+		// check if the snake eats the food in the next move
+		// head = ii(head.first + dir.first, head.second + dir.second); 
+		head[0] = head[0] + dir[0];
+		head[1] = head[1] + dir[1];
+		snake[en][0] = head[0];
+		snake[en][1] = head[1];
+		en = (en + 1 + Q_LEN) % Q_LEN;
+
+		// move the snake in the direction
+		if(head[0] != food_pos[0] || head[1] != food_pos[1]) {
+			st = (st + 1 + Q_LEN) % Q_LEN;
+		} else {
+			score += 1;
+			loops += additers;
+			foodEaten = 1;
+		}
+
+		// check if the snake crosses any boundaries
+		x = head[0];
+		y = head[1];
+		if(x < 0 || y < 0 || x >= M || y >= N) {
+			// crossed the boundart game over
+			snakeIsAlive = 0;
+			// break;
+		}
+
+		// check if the snake eats it self
+		snake_size = (en - st + Q_LEN) % Q_LEN;
+		for(int i = 0; i < snake_size; i++) {
+			int haha[2];
+			haha[0] = snake[st][0];
+			haha[1] = snake[st][1];
+			// snake.pop();
+			st = (st + 1 + Q_LEN) % Q_LEN;
+			if(i < snake_size - 1 && haha[0] == x && haha[1] == y) {
+				snakeIsAlive = 0;
+				break;
+			}    
+			snake[en][0] = haha[0];
+			snake[en][1] = haha[1];
+			en = (en + 1 + Q_LEN) % Q_LEN;        
+			// snake.push(haha);
+		}			
+		loops--;
+	} while(snakeIsAlive && loops >= 0 && fi < NUM_FOODS);
 	
 	__syncthreads();
 
@@ -516,7 +514,7 @@ int main() {
 		the operations for the organism 
 		*/
 		blocks = POPULATION_SIZE;
-		threads = 128;
+		threads = 32;
 
 		evaluate<<<blocks, threads, sizeof(float) * GENOME_LENGTH>>>(d_organism, d_foods, d_fitness_score, GENOME_LENGTH);
 
