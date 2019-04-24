@@ -148,10 +148,11 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 		x = head[0];
 		y = head[1];
 		snake_size = (en - st + Q_LEN) % Q_LEN;
-		for(int i = 0; i < 8; i++) {
-			for(int j = 0; j < 3; j++) {
-				dist[i][j] = 2 * max(M, N);
-			}
+		__syncthreads();
+		if(threadIdx.x < 24) {
+			int i = threadIdx.x / 3;
+			int j = threadIdx.x % 3;
+			dist[i][j] = 2 * (M+N);
 		}
 		__syncthreads();
 		if (threadIdx.x < 9 && threadIdx.x != 4) {
