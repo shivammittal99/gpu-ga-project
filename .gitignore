@@ -2,3 +2,6 @@
 snake-serial
 snake-parallel
 genomes.txt
+*.out
+snake-super
+snake-test

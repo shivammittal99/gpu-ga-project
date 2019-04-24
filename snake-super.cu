@@ -82,7 +82,7 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 	int dir[2];
 	int score;
 	int fi;
-	float dist[8][3];
+	__shared__ float dist[8][3];
 	float* input;
 	float* W1;
 	float* b1;
@@ -109,40 +109,31 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 	int init_x = M / 2;
 	int init_y = N / 2;
 
-	// if(threadIdx.x == 0) {
-		input = &dist[0][0];
-		W1 = &gene[0];
-		b1 = &gene[n * m1];
-		W2 = &gene[n * m1 + m1];
-		b2 = &gene[n * m1 + m1 + m1 * o];
-		snake_init_length = 5;
-		st = 0;
-		en = snake_init_length;
-		maxiters = 3 * (M + N);
-		additers = 1 * (M + N);
-		loops = maxiters;
-		score = 0;
-		fi = 0;
-		snake_motion = 3;
-		dir[0] = 1;
-		dir[1] = 0;
-		snakeIsAlive = 1;
-		foodEaten = 1;
-	// }
+	input = &dist[0][0];
+	W1 = &gene[0];
+	b1 = &gene[n * m1];
+	W2 = &gene[n * m1 + m1];
+	b2 = &gene[n * m1 + m1 + m1 * o];
+	snake_init_length = 5;
+	st = 0;
+	en = snake_init_length;
+	maxiters = 3 * (M + N);
+	additers = 1 * (M + N);
+	loops = maxiters;
+	score = 0;
+	fi = 0;
+	snake_motion = 3;
+	dir[0] = 1;
+	dir[1] = 0;
+	snakeIsAlive = 1;
+	foodEaten = 1;
 
 	__syncthreads();
-	// if(threadIdx.x == 0) {
-		for(int i = 0; i < snake_init_length; i++) {
-			snake[i][0] = i + init_x;
-			snake[i][1] = init_y;
-		}
-	// }	
-	// if(threadIdx.x < snake_init_length) {
-	// 	snake[threadIdx.x][0] = threadIdx.x + init_x;
-	// 	snake[threadIdx.x][1] = init_y; 
-	// }
+	for(int i = 0; i < snake_init_length; i++) {
+		snake[i][0] = i + init_x;
+		snake[i][1] = init_y;
+	}
 	__syncthreads();
-		// if(threadIdx.x == 0) {
 	do
 	{
 		if(foodEaten) {
@@ -163,47 +154,44 @@ void evaluate(float* genes, int* foods, int* fitness_score, int GENOME_LENGTH) {
 			}
 		}
 		__syncthreads();
-		int k = 0;
-		for(int i = -1; i <= 1; i++) {
-			for(int j = -1; j <= 1; j++) {
-				if (i == 0 && j == 0 ) {
-					continue;
-				} else if(i == 0) {
-					dist[k][0] = (j > 0) * N - j * y;
-				} else if(j == 0) {
-					dist[k][0] = (i > 0) * M - i * x;
-				} else {
-					dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
-				}
+		if (threadIdx.x < 9 && threadIdx.x != 4) {
+			int i = threadIdx.x / 3 - 1;
+			int j = threadIdx.x % 3 - 1;
+			int k = (threadIdx.x > 4) ? (threadIdx.x - 1) : threadIdx.x;
+			if(i == 0) {
+				dist[k][0] = (j > 0) * N - j * y;
+			} else if(j == 0) {
+				dist[k][0] = (i > 0) * M - i * x;
+			} else {
+				dist[k][0] = min((i > 0) * M - i * x, (j > 0) * N - j * y);
+			}
 
-				int u, v;
-				u = food_pos[0] - x;
-				v = food_pos[1] - y;
+			int u, v;
+			u = food_pos[0] - x;
+			v = food_pos[1] - y;
+			if(check(u, v, i, j)) {
+				if(abs(dist[k][1]) > float(abs(u) + abs(v)) / (abs(i) + abs(j))) {
+					dist[k][1] = float(abs(u) + abs(v)) / (abs(i) + abs(j));
+				}
+			}
+
+			for(int ti = 0; ti < snake_size; ti++) {
+				int haha[2];
+				haha[0] = snake[st][0];
+				haha[1] = snake[st][1];
+				// snake.pop();
+				st = (st + 1 + Q_LEN) % Q_LEN;
+				u = haha[0] - x;
+				v = haha[1] - y;
 				if(check(u, v, i, j)) {
-					if(abs(dist[k][1]) > float(abs(u) + abs(v)) / (abs(i) + abs(j))) {
-						dist[k][1] = float(abs(u) + abs(v)) / (abs(i) + abs(j));
+					if(abs(dist[k][2]) > float(abs(u) + abs(v))/(abs(i) + abs(j))) {
+						dist[k][2] = float(abs(u) + abs(v))/(abs(i) + abs(j));
 					}
 				}
-
-				for(int ti = 0; ti < snake_size; ti++) {
-					int haha[2];
-					haha[0] = snake[st][0];
-					haha[1] = snake[st][1];
-					// snake.pop();
-					st = (st + 1 + Q_LEN) % Q_LEN;
-					u = haha[0] - x;
-					v = haha[1] - y;
-					if(check(u, v, i, j)) {
-						if(abs(dist[k][2]) > float(abs(u) + abs(v))/(abs(i) + abs(j))) {
-							dist[k][2] = float(abs(u) + abs(v))/(abs(i) + abs(j));
-						}
-					}
-					snake[en][0] = haha[0];
-					snake[en][1] = haha[1];
-					en = (en + 1 + Q_LEN) % Q_LEN;
-					// snake.push(haha);
-				}
-				k++;						
+				snake[en][0] = haha[0];
+				snake[en][1] = haha[1];
+				en = (en + 1 + Q_LEN) % Q_LEN;
+				// snake.push(haha);
 			}
 		}
 		__syncthreads();
