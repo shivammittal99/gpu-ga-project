@@ -62,6 +62,19 @@ bool check(int u, int v, int i, int j) {
 	return false;
 }
 
+__device__
+float dense(float layerInput[],float W[], float b[],int idx,int in_len,int out_len)
+{
+	float output = 0.0;
+	for(int j = 0; j < in_len; j++) {
+		output += W[j * out_len + idx] * layerInput[j];
+	}
+	output += b[idx];
+	/* sigmoid */
+	output = 1.0 / (1.0 + expf(-output));
+	return output;
+}
+
 __global__
 void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 	int food_pos[2];
@@ -199,30 +212,17 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		
 		if(threadIdx.x < m1) {
 			int i = threadIdx.x;
-			/* dense 1 */
-			float res = 0;
-			for(int j = 0; j < n; j++) {
-				res += W1[j * m1 + i] * input[j];
-			}
-			res += b1[i];
-			/* sigmoid */
+			/* dense 1  */
 		
-			output1[i] = 1.0 / (1.0 + expf(-res));
+			output1[i] = dense(input,W1,b1,i,n,m1);
 		}
 		
 		__syncthreads();
 		
 		if (threadIdx.x < o) {
 			int i = threadIdx.x;
-			/* dense 2 */
-			float res = 0;
-			for(int j = 0; j < m1; j++) {
-				res += W2[j * o + i] * output1[j];
-			}
-			res += b2[i];
-
-			/* sigmoid */
-			output2[i] = 1.0 / (1.0 + expf(-res));
+			/* dense 2  */
+			output2[i] = dense(output1,W2,b2,i,m1,o);
 		}
 
 		__syncthreads();
@@ -297,7 +297,6 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		}
 		
 		// check if the snake eats the food in the next move
-		// head = ii(head.first + dir.first, head.second + dir.second); 
 		head[0] = head[0] + dir[0];
 		head[1] = head[1] + dir[1];
 		snake[en][0] = head[0];
