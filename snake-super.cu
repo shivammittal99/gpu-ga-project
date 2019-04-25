@@ -44,8 +44,6 @@ mt19937 rd{tempo};
 
 int GENOME_LENGTH;
 
-float *organism;
-
 int *fitness_score = NULL, max_score;
 
 #define M 80
@@ -404,7 +402,7 @@ int main() {
 	const int L = POPULATION_SIZE * GENOME_LENGTH;
 	const size_t data_size = sizeof(float) * POPULATION_SIZE * GENOME_LENGTH;
 	
-	organism = (float *) malloc(data_size);
+	float *best_organism = (float *) malloc(sizeof(float) * GENOME_LENGTH);
 	
 	int blocks = 4096;
     int threads = GENOME_LENGTH;
@@ -505,9 +503,12 @@ int main() {
 			}
 		}
 
+		cudaMemcpy(best_organism, d_organism + local_best * GENOME_LENGTH, sizeof(float) * GENOME_LENGTH, cudaMemcpyDeviceToHost);
+		cudaErrorTrace();
+
 		// printing the genome of the best organism in the generation to the file.
 		for(int k = 0; k < GENOME_LENGTH; k++) {
-			fprintf(fout, "%f ", organism[local_best * GENOME_LENGTH + k]);
+			fprintf(fout, "%f ", best_organism[k]);
 		}
 		fprintf(fout, "\n");
 
@@ -546,7 +547,7 @@ int main() {
 	cudaFree(random_floats[0]);
 	cudaFree(random_floats[1]);
 
-	free(organism);
+	free(best_organism);
 
 	return 0;
 }
