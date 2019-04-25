@@ -186,7 +186,7 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 
 			for(int i=0;i < 8;i++) {
 				for(int j = 0; j < 3; j++) {
-					dist[i][j] = 2*max(M, N);
+					dist[i][j] = 2 * (M + N);
 				}
 			}
 
@@ -538,6 +538,8 @@ int main()
 		crossover(selected);
 		mutate(1e-2);
 	}
+
+	fclose(fout);
 
 	free(organism);
 

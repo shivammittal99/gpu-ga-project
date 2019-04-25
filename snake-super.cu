@@ -147,7 +147,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		if(threadIdx.x < 24) {
 			int i = threadIdx.x / 3;
 			int j = threadIdx.x % 3;
-			dist[i][j] = 2 * (M+N);
+			dist[i][j] = 2 * (M + N);
 		}
 
 		__syncthreads();
@@ -536,6 +536,8 @@ int main() {
 		
 		mutate<<<POPULATION_SIZE, GENOME_LENGTH>>>(random_floats[0], random_floats[1], d_organism, 1e-2);
 	}
+
+	fclose(fout);
 
 	cudaFree(d_organism);
 	cudaFree(d_temp_generation);
