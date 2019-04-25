@@ -53,11 +53,11 @@ int *fitness_score = NULL, max_score;
 __device__
 bool check(int u, int v, int i, int j) {
 	if(u == 0 && v != 0) {
-		return i == 0 && j == v / abs(v);
+		return (i == 0) & (j == v / abs(v));
 	} else if(u != 0 && v == 0) {
-		return i == u / abs(u) && j == 0;
+		return (i == u / abs(u)) & (j == 0);
 	} else if(u != 0 && v != 0) {
-		return i == u / abs(u) && j == v / abs(v);
+		return (i == u / abs(u)) & (j == v / abs(v));
 	}
 	return false;
 }
@@ -200,7 +200,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		if(threadIdx.x < m1) {
 			int i = threadIdx.x;
 			/* dense 1 */
-			int res = 0;
+			float res = 0;
 			for(int j = 0; j < n; j++) {
 				res += W1[j * m1 + i] * input[j];
 			}
@@ -215,7 +215,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		if (threadIdx.x < o) {
 			int i = threadIdx.x;
 			/* dense 2 */
-			int res = 0;
+			float res = 0;
 			for(int j = 0; j < m1; j++) {
 				res += W2[j * o + i] * output1[j];
 			}

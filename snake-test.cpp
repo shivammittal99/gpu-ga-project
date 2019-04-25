@@ -348,10 +348,8 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 					snake.push(x);
 				}
 
-				outtextxy(ss_x * 1.1, ss_y / 2 - 20, &string("Generation: " + to_string(generation_id))[0]);
 				outtextxy(ss_x * 1.1, ss_y / 2, &string("Score: " + to_string(score))[0]);
-				outtextxy(ss_x * 1.1, ss_y / 2 + 20, &string("Max score: " + to_string(max_score))[0]);
-				delay(10);
+				delay(20);
 			}
 
 		}while(snakeIsAlive && loops-- && fi < num_foods);
