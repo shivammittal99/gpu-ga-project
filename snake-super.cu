@@ -501,7 +501,7 @@ int main() {
 		curandGenerateUniform(prng, random_floats[0], POPULATION_SIZE * GENOME_LENGTH);
 		curandGenerateNormal(prng, random_floats[1], POPULATION_SIZE * GENOME_LENGTH, 0.0, 1.0);
 		thrust::sequence(thrust::cuda::par.on(stream1), thrust_indices_ptr, thrust_indices_ptr + POPULATION_SIZE);
-		cudaStreamSynchronize(stream1);	
+		
 
 		cudaMemcpy(fitness_score, d_fitness_score, sizeof(int) * POPULATION_SIZE, cudaMemcpyDeviceToHost);
 		cudaErrorTrace();
@@ -529,8 +529,7 @@ int main() {
 		const int selected = 0.15 * POPULATION_SIZE;
 
 		
-
-		//thrust::sequence(thrust_indices_ptr, thrust_indices_ptr + POPULATION_SIZE);
+		cudaStreamSynchronize(stream1);	
 		thrust::sort_by_key(thrust_fitness_score_ptr, thrust_fitness_score_ptr + POPULATION_SIZE, thrust_indices_ptr, thrust::greater<int>());
 		selection<<<selected, GENOME_LENGTH>>>(d_organism, d_temp_generation, d_indices);
 
