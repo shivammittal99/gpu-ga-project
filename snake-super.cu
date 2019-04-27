@@ -1,4 +1,4 @@
-%%cuda --name snake-super.cu
+//%%cuda --name snake-super.cu
 /*	CS6023 GPU Programming
  	Project - Genetic Algorithm to optimise snakes game
  		Done By, 
@@ -18,6 +18,7 @@
 
 using namespace std;
 
+// utility functio used for debugging the code.
 #define cudaErrorTrace() {\
     cudaError_t err = cudaGetLastError();\
     if(err != cudaSuccess) {\
@@ -32,12 +33,14 @@ typedef pair<int, int> ii;
 #define NUM_GENERATIONS 300
 #define NUM_FOODS 256
 
-// Defining the parameters in each layer of the neural network.
-// int n = 24, m1 = 16, o = 4;
+// Defining the number parameters in each layer of the neural network. 
+// The neural network sed consists of three layers, the input layer, one hidden layer and the output layer. Sigmod activationg is used at each step
+// n is the number of parameter in the input layer.  m1 is the number of parameter in the hidden layer. o is the number of parameter in the output layer.
 #define n 24
 #define m1 16
 #define o 4
 
+// For random number generation.
 std::random_device oracle{};
 auto tempo = oracle();    
 mt19937 rd{tempo};
@@ -46,10 +49,14 @@ int GENOME_LENGTH;
 
 int *fitness_score = NULL, max_score;
 
+// M and N are used to define the initial x and y coordinate of the snake respectively.
 #define M 80
 #define N 80
+// Q_len gives the upperbound on the length of the snake.
 #define Q_LEN 128
 
+/* Device funcion. This is a utility function which is called from the evaluate kernel. This function is used to check (i,j) lies on the line joining (0,0) 
+and (u,v) (same direction wrt origin)*/ 
 __device__
 bool check(int u, int v, int i, int j) {
 	if(u == 0 && v != 0) {
@@ -62,6 +69,7 @@ bool check(int u, int v, int i, int j) {
 	return false;
 }
 
+/* Device funcion. This is a utility function which is called from the evaluate kernel. It calculates one output of a layer of the neural network (outpout[idx]) */
 __device__
 float dense(float layerInput[],float W[], float b[],int idx,int in_len,int out_len)
 {
@@ -75,8 +83,11 @@ float dense(float layerInput[],float W[], float b[],int idx,int in_len,int out_l
 	return output;
 }
 
+/* Device code. Kerenl to evaluate the fitness score of all the organisms in a generation parallely One bblock is given to one organism 
+and threads in the block are further utilised to divide work among the organism for the neural evaluation part. */
 __global__
 void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
+	// Variables for score computation
 	int food_pos[2];
 	int snake[Q_LEN][2];
 	int snake_init_length;
@@ -108,6 +119,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 
 	int i = threadIdx.x;
 
+	// each gene copied into shared memory by each thread.
 	while(i < GENOME_LENGTH) {
 		gene[i] = genes[blockIdx.x * GENOME_LENGTH + i];
 		i += blockDim.x;
@@ -115,6 +127,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 
 	__syncthreads();
 	
+	// work done by all the threads.
 	int init_x = M / 2;
 	int init_y = N / 2;
 
@@ -132,6 +145,13 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 	score = 0;
 	fi = 0;
 	snake_motion = 3;
+
+	// directions.
+	// 1 north:0,-1
+	// 2 south:0,1
+	// 3 east: 1,0
+	// 4 west:-1,0
+
 	dir[0] = 1;
 	dir[1] = 0;
 	snakeIsAlive = 1;
@@ -142,6 +162,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		snake[i][1] = init_y;
 	}
 
+	// loop till the anske is alive
 	do
 	{
 		if(foodEaten) {
@@ -151,6 +172,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 			foodEaten = 0; 
 		}
 
+		// calculating the input patrameters of the neural network
 		head[0] = snake[(en - 1 + Q_LEN) % Q_LEN][0];
 		head[1] = snake[(en - 1 + Q_LEN) % Q_LEN][1]; 
 		x = head[0];
@@ -210,15 +232,17 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 
 		__syncthreads();
 		
+		// Evauating the two layers of the neural network.
+		// First layer
 		if(threadIdx.x < m1) {
 			int i = threadIdx.x;
 			/* dense 1  */
-		
 			output1[i] = dense(input,W1,b1,i,n,m1);
 		}
 		
 		__syncthreads();
 		
+		// Second layer
 		if (threadIdx.x < o) {
 			int i = threadIdx.x;
 			/* dense 2  */
@@ -227,6 +251,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 
 		__syncthreads();
 		
+		// getting the combined vale of the neural network.
 		if(threadIdx.x == 0) {
 			float maxm = output2[0];
 			com = 0;
@@ -240,6 +265,14 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 		
 		__syncthreads();
 		
+		//Updating the directions of the snake.
+		/** com = 
+			 * 0 straight
+			 * 1 left
+			 * 2 right
+			 * 3 backward
+			 */
+
 		if(com == 1) {
 			if(snake_motion == 1) {
 				// change to west
@@ -296,14 +329,15 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 			// break;
 		}
 		
-		// check if the snake eats the food in the next move
+		
+		// move the snake in the direction
 		head[0] = head[0] + dir[0];
 		head[1] = head[1] + dir[1];
 		snake[en][0] = head[0];
 		snake[en][1] = head[1];
 		en = (en + 1 + Q_LEN) % Q_LEN;
 
-		// move the snake in the direction
+		// check if the snake eats the food in the next move
 		if(head[0] != food_pos[0] || head[1] != food_pos[1]) {
 			st = (st + 1 + Q_LEN) % Q_LEN;
 		} else {
@@ -344,6 +378,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 	
 	__syncthreads();
 
+	// Updating the fitness score.
 	if(threadIdx.x == 0) {
 		fitness_score[blockIdx.x] = score;
 	}
@@ -352,6 +387,7 @@ void evaluate(float *genes, int *foods, int *fitness_score, int GENOME_LENGTH) {
 // Function to select the best (selection_cutoff)% of the population in each generation where the organisms are sorted in the decreasing of the fitness scores.
 __global__
 void selection(float *prev, float *curr, int *idx) {
+	// Using ping-pong method here.
 	curr[blockIdx.x * blockDim.x + threadIdx.x] = prev[idx[blockIdx.x] * blockDim.x + threadIdx.x];
 }
 
@@ -384,6 +420,7 @@ void mutate(float *rand1, float *rand2, float *d_organism, const float mutation_
 	d_organism[idx] = changed;
 }
 
+/* kernel to adjust the range of uniform value to (-1, 1] */
 __global__ 
 void scale(float *mat, float a, float b) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
