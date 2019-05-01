@@ -232,8 +232,6 @@ int* evaluate(float *genes, int num_organisms, int generation_id, bool visualize
 			// 4 west:-1,0
 			int com = forward(&dist[0][0], genes + ind * GENOME_LENGTH);
 			
-	
-			
 			if(com == 0) {
 				// no change to direction
 			}

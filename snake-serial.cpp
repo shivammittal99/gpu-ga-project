@@ -528,7 +528,7 @@ int main()
 		}
 		fprintf(fout, "\n");
 
-		free(evaluate(organism + local_best * GENOME_LENGTH, 1, i, false, foods, num_foods));
+		free(evaluate(organism + local_best * GENOME_LENGTH, 1, i, true, foods, num_foods));
 
 		max_score = max(max_score, local_max);
 
